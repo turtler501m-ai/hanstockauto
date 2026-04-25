@@ -25,9 +25,6 @@ on:
           - auto
           - analysis_only
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   trade:
     runs-on: ubuntu-latest
@@ -35,16 +32,23 @@ jobs:
 
     steps:
       - name: 코드 체크아웃
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v4
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Python 환경 설정
-        uses: actions/setup-python@v5.6.0
+        uses: actions/setup-python@v5
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         with:
           python-version: '3.12'
           cache: 'pip'
 
       - name: 의존성 설치
         run: pip install -r requirements.txt
+
+      - name: logs 폴더 생성
+        run: mkdir -p logs
 
       - name: 자동매매 실행
         env:
@@ -59,12 +63,16 @@ jobs:
           TAKE_PROFIT: ${{ vars.TAKE_PROFIT || '30' }}
           RSI_BUY: ${{ vars.RSI_BUY || '30' }}
           RSI_SELL: ${{ vars.RSI_SELL || '70' }}
-        run: python src/trader.py
+          LOG_FILE: logs/trade-${{ github.run_number }}.log
+        run: python src/trader.py 2>&1 | tee $LOG_FILE
 
       - name: 실행 결과 업로드
         if: always()
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v4
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         with:
           name: trade-log-${{ github.run_number }}
           path: logs/
           retention-days: 30
+          if-no-files-found: warn
