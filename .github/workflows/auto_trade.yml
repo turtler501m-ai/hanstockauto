@@ -47,8 +47,8 @@ jobs:
       - name: 의존성 설치
         run: pip install -r requirements.txt
 
-      - name: logs 폴더 생성
-        run: mkdir -p logs
+      - name: 폴더 생성
+        run: mkdir -p logs data
 
       - name: 자동매매 실행
         env:
@@ -59,11 +59,17 @@ jobs:
           KAKAO_TOKEN: ${{ secrets.KAKAO_TOKEN }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}   # ← 추가
           DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
+          TRADING_ENV: ${{ vars.TRADING_ENV || 'demo' }}
           SPLIT_N: ${{ vars.SPLIT_N || '7' }}
           STOP_LOSS_PCT: ${{ vars.STOP_LOSS_PCT || '-15' }}
           TAKE_PROFIT: ${{ vars.TAKE_PROFIT || '30' }}
           RSI_BUY: ${{ vars.RSI_BUY || '30' }}
           RSI_SELL: ${{ vars.RSI_SELL || '70' }}
+          TOTAL_CAPITAL: ${{ vars.TOTAL_CAPITAL || '10000000' }}
+          MAX_POSITIONS: ${{ vars.MAX_POSITIONS || '3' }}
+          MAX_SINGLE_WEIGHT: ${{ vars.MAX_SINGLE_WEIGHT || '0.30' }}
+          CASH_BUFFER: ${{ vars.CASH_BUFFER || '0.20' }}
+          MAX_DAILY_LOSS_PCT: ${{ vars.MAX_DAILY_LOSS_PCT || '3.0' }}
           LOG_FILE: logs/trade-${{ github.run_number }}.log
         run: python src/trader.py 2>&1 | tee $LOG_FILE
 
@@ -74,6 +80,8 @@ jobs:
           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         with:
           name: trade-log-${{ github.run_number }}
-          path: logs/
+          path: |
+            logs/
+            data/
           retention-days: 30
           if-no-files-found: warn
