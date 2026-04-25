@@ -90,7 +90,7 @@ def send_slack(text: str = "", blocks: list = None, color: str = None):
 
 def slack_session_start(cash: int, total: int, stock_count: int):
     """매매 세션 시작 알림"""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M KST")
     mode = "🔴 실거래" if not DRY_RUN else "🔵 모의실행"
     send_slack(
         text=f"[세븐스플릿] 자동매매 시작 {now}",
@@ -157,7 +157,7 @@ def slack_order(name: str, symbol: str, action: str, qty: int, price: int,
 
 def slack_session_end(results: list, cash: int, total: int, pnl: int):
     """매매 세션 종료 요약 알림"""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M KST")
     buy_cnt  = sum(1 for r in results if r["action"] == "buy"  and r["ok"])
     sell_cnt = sum(1 for r in results if r["action"] == "sell" and r["ok"])
     fail_cnt = sum(1 for r in results if not r["ok"])
@@ -349,9 +349,8 @@ class KIStockAPI:
     def get_daily(self, symbol: str, n: int = 60) -> list:
         """일별 시세 조회 — 주식/ETF 자동 구분 (FHKST03010100)"""
         url = f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice"
-        today = datetime.now().strftime("%Y%m%d")
-        from datetime import timedelta
-        start = (datetime.now() - timedelta(days=365*3)).strftime("%Y%m%d")
+        today = datetime.now(KST).strftime("%Y%m%d")
+        start = (datetime.now(KST) - timedelta(days=365*3)).strftime("%Y%m%d")
         # ETF는 시장구분코드 "E", 주식은 "J"
         mrkt_div = "E" if symbol in self.ETF_MARKET_CODES else "J"
         params = {
