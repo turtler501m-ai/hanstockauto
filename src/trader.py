@@ -129,22 +129,36 @@ class KIStockAPI:
             return {"output1": [], "output2": [{}]}
 
     def get_daily(self, symbol: str, n: int = 60) -> list:
-        url = f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-price"
+        """일별 시세 조회 — 주식/ETF 공통 (FHKST03010100)"""
+        url = f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice"
         today = datetime.now().strftime("%Y%m%d")
+        # 충분히 과거 날짜 (3년 전)
+        from datetime import timedelta
+        start = (datetime.now() - timedelta(days=365*3)).strftime("%Y%m%d")
         params = {
             "FID_COND_MRKT_DIV_CODE": "J",
             "FID_INPUT_ISCD": symbol,
+            "FID_INPUT_DATE_1": start,
+            "FID_INPUT_DATE_2": today,
             "FID_PERIOD_DIV_CODE": "D",
             "FID_ORG_ADJ_PRC": "0",
-            "FID_INPUT_DATE_1": "",
-            "FID_INPUT_DATE_2": today,
         }
         try:
-            r = requests.get(url, headers=self._headers("FHKST01010400"), params=params, timeout=15)
-            r.raise_for_status()
-            return r.json().get("output2", [])[:n]
+            r = requests.get(url, headers=self._headers("FHKST03010100"), params=params, timeout=15)
+            log(f"[API] {symbol} 시세 HTTP {r.status_code}")
+            if r.status_code != 200:
+                log(f"[WARN] {symbol} 시세 오류: {r.text[:200]}")
+                return []
+            data = r.json()
+            rt_cd = data.get("rt_cd", "?")
+            if rt_cd != "0":
+                log(f"[WARN] {symbol} 시세 rt_cd={rt_cd} msg={data.get('msg1','')}")
+                return []
+            output = data.get("output2", [])
+            log(f"[OK] {symbol} 시세 {len(output)}일치 수신")
+            return output[:n]
         except Exception as e:
-            log(f"[WARN] {symbol} 시세 조회 실패: {e}")
+            log(f"[WARN] {symbol} 시세 조회 예외: {e}")
             return []
 
     def place_order(self, symbol: str, order_type: str, price: int, qty: int) -> dict:
@@ -297,7 +311,6 @@ def run():
 
         log(f"  지표: RSI={ind['rsi']} SMA20={ind['sma20']:.0f} SMA60={ind['sma60']:.0f} BB({ind['bb_lo']:.0f}~{ind['bb_hi']:.0f})")
         log(f"  신호: {signal['action'].upper()} — {signal['reason']}")
-
         if signal["action"] != "hold":
             if signal["action"] == "buy":
                 cost = signal["qty"] * signal["price"]
@@ -316,6 +329,8 @@ def run():
             })
             if ok and signal["action"] == "buy":
                 cash -= signal["qty"] * signal["price"]
+
+    # 결과 요약
     log("\n" + "=" * 60)
     if results:
         lines = [f"[세븐스플릿] {datetime.now().strftime('%m/%d %H:%M')}"]
