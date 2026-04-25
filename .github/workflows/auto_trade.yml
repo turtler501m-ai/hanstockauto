@@ -1,0 +1,71 @@
+name: 세븐스플릿 자동매매
+
+on:
+  schedule:
+    # 평일 장 시작 전 (08:50 KST = 23:50 UTC 전날)
+    - cron: '50 23 * * 0-4'
+    # 평일 오전 체크 (10:00 KST = 01:00 UTC)
+    - cron: '0 1 * * 1-5'
+    # 평일 오후 체크 (13:00 KST = 04:00 UTC)
+    - cron: '0 4 * * 1-5'
+    # 평일 장 마감 전 (15:00 KST = 06:00 UTC)
+    - cron: '0 6 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '모의 실행 (실제 주문 없음)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      mode:
+        description: '실행 모드'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - analysis_only
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 환경 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 자동매매 실행
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KISTOCK_APP_KEY:   ${{ secrets.KISTOCK_APP_KEY }}
+          KISTOCK_APP_SECRET:${{ secrets.KISTOCK_APP_SECRET }}
+          KISTOCK_ACCOUNT:   ${{ secrets.KISTOCK_ACCOUNT }}
+          KAKAO_TOKEN:       ${{ secrets.KAKAO_TOKEN }}
+          DRY_RUN:           ${{ github.event.inputs.dry_run || 'true' }}
+          SPLIT_N:           ${{ vars.SPLIT_N || '7' }}
+          STOP_LOSS_PCT:     ${{ vars.STOP_LOSS_PCT || '-15' }}
+          TAKE_PROFIT:       ${{ vars.TAKE_PROFIT || '30' }}
+          RSI_BUY:           ${{ vars.RSI_BUY || '30' }}
+          RSI_SELL:          ${{ vars.RSI_SELL || '70' }}
+        run: python src/trader.py
+
+      - name: 실행 결과 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trade-log-${{ github.run_number }}
+          path: logs/
+          retention-days: 30
