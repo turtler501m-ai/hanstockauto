@@ -22,8 +22,8 @@ KISTOCK_APP_SECRET = os.environ.get("KISTOCK_APP_SECRET", "")
 KISTOCK_ACCOUNT    = os.environ.get("KISTOCK_ACCOUNT", "")
 SLACK_WEBHOOK_URL  = os.environ.get("SLACK_WEBHOOK_URL", "")
 
-# 환경: demo(모의) | real(실전)
-TRADING_ENV = os.environ.get("TRADING_ENV", "demo")
+# 환경: real(실전 API) | demo(모의투자 API — 별도 신청 필요)
+TRADING_ENV = os.environ.get("TRADING_ENV", "real")
 DRY_RUN     = os.environ.get("DRY_RUN", "true").lower() == "true"
 
 # 세븐스플릿 파라미터
