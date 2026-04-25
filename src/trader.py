@@ -298,7 +298,7 @@ def run():
         log(f"  지표: RSI={ind['rsi']} SMA20={ind['sma20']:.0f} SMA60={ind['sma60']:.0f} BB({ind['bb_lo']:.0f}~{ind['bb_hi']:.0f})")
         log(f"  신호: {signal['action'].upper()} — {signal['reason']}")
 
-fix: add secrets validation, detailed API error logs, fix account parsing            if signal["action"] == "buy":
+            if signal["action"] == "buy":
                 cost = signal["qty"] * signal["price"]
                 if cost > cash:
                     log(f"  [SKIP] 예수금 부족 — 필요 {cost:,}원 / 보유 {cash:,}원")
