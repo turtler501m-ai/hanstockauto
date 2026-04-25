@@ -57,6 +57,7 @@ jobs:
           KISTOCK_APP_SECRET: ${{ secrets.KISTOCK_APP_SECRET }}
           KISTOCK_ACCOUNT: ${{ secrets.KISTOCK_ACCOUNT }}
           KAKAO_TOKEN: ${{ secrets.KAKAO_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}   # ← 추가
           DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
           SPLIT_N: ${{ vars.SPLIT_N || '7' }}
           STOP_LOSS_PCT: ${{ vars.STOP_LOSS_PCT || '-15' }}

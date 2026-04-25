@@ -14,6 +14,7 @@ KISTOCK_APP_KEY    = os.environ.get("KISTOCK_APP_KEY", "")
 KISTOCK_APP_SECRET = os.environ.get("KISTOCK_APP_SECRET", "")
 KISTOCK_ACCOUNT    = os.environ.get("KISTOCK_ACCOUNT", "")
 KAKAO_TOKEN        = os.environ.get("KAKAO_TOKEN", "")
+SLACK_WEBHOOK_URL  = os.environ.get("SLACK_WEBHOOK_URL", "")   # ← 추가
 
 SPLIT_N       = int(os.environ.get("SPLIT_N", "7"))
 STOP_LOSS_PCT = float(os.environ.get("STOP_LOSS_PCT", "-15"))
@@ -50,6 +51,205 @@ def check_secrets():
     log(f"[OK] Secrets 확인: APP_KEY={KISTOCK_APP_KEY[:8]}... / ACCOUNT={KISTOCK_ACCOUNT[:4]}****")
 
 
+# ── Slack 알림 ─────────────────────────────────────────────
+def send_slack(text: str = "", blocks: list = None, color: str = None):
+    """
+    Slack Incoming Webhook으로 메시지 전송.
+    - text: 간단한 텍스트 (fallback)
+    - blocks: Block Kit 블록 리스트
+    - color: 사이드바 색상 (#36a64f / #e74c3c / #f0ad4e)
+    """
+    if not SLACK_WEBHOOK_URL:
+        return
+
+    payload = {}
+    if color and blocks:
+        # attachment로 감싸면 색상 사이드바 적용
+        payload = {
+            "attachments": [{
+                "color": color,
+                "blocks": blocks,
+                "fallback": text,
+            }]
+        }
+    elif blocks:
+        payload = {"text": text, "blocks": blocks}
+    else:
+        payload = {"text": text}
+
+    try:
+        r = requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=10)
+        if r.status_code != 200:
+            log(f"[WARN] Slack 전송 실패 HTTP {r.status_code}: {r.text[:100]}")
+    except Exception as e:
+        log(f"[WARN] Slack 알림 예외: {e}")
+
+
+def slack_session_start(cash: int, total: int, stock_count: int):
+    """매매 세션 시작 알림"""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    mode = "🔴 실거래" if not DRY_RUN else "🔵 모의실행"
+    send_slack(
+        text=f"[세븐스플릿] 자동매매 시작 {now}",
+        blocks=[
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": f"🤖 세븐스플릿 자동매매 시작", "emoji": True}
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*실행 시각*\n{now}"},
+                    {"type": "mrkdwn", "text": f"*실행 모드*\n{mode}"},
+                    {"type": "mrkdwn", "text": f"*예수금*\n{cash:,}원"},
+                    {"type": "mrkdwn", "text": f"*총 평가금액*\n{total:,}원"},
+                    {"type": "mrkdwn", "text": f"*보유 종목 수*\n{stock_count}개"},
+                ]
+            },
+            {"type": "divider"}
+        ],
+        color="#2196F3"
+    )
+
+
+def slack_order(name: str, symbol: str, action: str, qty: int, price: int,
+                reason: str, ok: bool, indicators: dict):
+    """개별 주문 알림"""
+    emoji = "🟢" if action == "buy" else "🔴"
+    action_str = "매수" if action == "buy" else "매도"
+    status = "✅ 성공" if ok else "❌ 실패"
+    color = "#36a64f" if (action == "buy" and ok) else ("#e74c3c" if not ok else "#f0ad4e")
+    price_str = f"{price:,}원" if price else "시장가"
+    amount_str = f"{qty * price:,}원" if price else "-"
+
+    send_slack(
+        text=f"[{action_str}] {name} {qty}주 {status}",
+        blocks=[
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"{emoji} *{name}* (`{symbol}`) — {action_str} {status}"
+                }
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*수량*\n{qty}주"},
+                    {"type": "mrkdwn", "text": f"*단가*\n{price_str}"},
+                    {"type": "mrkdwn", "text": f"*금액*\n{amount_str}"},
+                    {"type": "mrkdwn", "text": f"*RSI*\n{indicators.get('rsi', '-')}"},
+                    {"type": "mrkdwn", "text": f"*SMA20/60*\n{indicators.get('sma20', 0):.0f} / {indicators.get('sma60', 0):.0f}"},
+                    {"type": "mrkdwn", "text": f"*수익률*\n{indicators.get('rt', 0):+.2f}%"},
+                ]
+            },
+            {
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": f"📋 사유: {reason}"}]
+            }
+        ],
+        color=color
+    )
+
+
+def slack_session_end(results: list, cash: int, total: int, pnl: int):
+    """매매 세션 종료 요약 알림"""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    buy_cnt  = sum(1 for r in results if r["action"] == "buy"  and r["ok"])
+    sell_cnt = sum(1 for r in results if r["action"] == "sell" and r["ok"])
+    fail_cnt = sum(1 for r in results if not r["ok"])
+
+    pnl_color = "#36a64f" if pnl >= 0 else "#e74c3c"
+    pnl_emoji = "📈" if pnl >= 0 else "📉"
+
+    if not results:
+        send_slack(
+            text="[세븐스플릿] 전체 종목 홀드 — 액션 없음",
+            blocks=[
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": f"⏸️ *전체 종목 홀드* — 매매 신호 없음\n_{now}_"}
+                }
+            ],
+            color="#9E9E9E"
+        )
+        return
+
+    # 거래 내역 텍스트
+    lines = []
+    for r in results:
+        e = "🟢" if r["action"] == "buy" else "🔴"
+        st = "✅" if r["ok"] else "❌"
+        lines.append(f"{e}{st} {r['name']} {r['action']} {r['qty']}주 — {r['reason']}")
+
+    send_slack(
+        text=f"[세븐스플릿] 매매 완료 {now}",
+        blocks=[
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": f"{pnl_emoji} 세븐스플릿 매매 완료", "emoji": True}
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*완료 시각*\n{now}"},
+                    {"type": "mrkdwn", "text": f"*총 평가금액*\n{total:,}원"},
+                    {"type": "mrkdwn", "text": f"*예수금 잔액*\n{cash:,}원"},
+                    {"type": "mrkdwn", "text": f"*평가 손익*\n{pnl:+,}원"},
+                    {"type": "mrkdwn", "text": f"*매수 체결*\n{buy_cnt}건"},
+                    {"type": "mrkdwn", "text": f"*매도 체결*\n{sell_cnt}건"},
+                ]
+            },
+            {"type": "divider"},
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*거래 내역*\n" + "\n".join(lines)
+                }
+            },
+            *(
+                [{
+                    "type": "context",
+                    "elements": [{"type": "mrkdwn", "text": f"⚠️ 실패 {fail_cnt}건 포함"}]
+                }] if fail_cnt else []
+            )
+        ],
+        color=pnl_color
+    )
+
+
+def slack_error(msg: str):
+    """오류 알림"""
+    send_slack(
+        text=f"[오류] {msg}",
+        blocks=[
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"🚨 *자동매매 오류 발생*\n```{msg}```"}
+            }
+        ],
+        color="#e74c3c"
+    )
+
+
+# ── 카카오 알림 ────────────────────────────────────────────
+def send_kakao(message: str):
+    if not KAKAO_TOKEN:
+        return
+    try:
+        requests.post(
+            "https://kapi.kakao.com/v2/api/talk/memo/default/send",
+            headers={"Authorization": f"Bearer {KAKAO_TOKEN}"},
+            data={"template_object": json.dumps({
+                "object_type": "text", "text": message,
+                "link": {"web_url": "https://github.com/turtler501m-ai/hanstockauto"}
+            })}, timeout=10
+        )
+    except Exception as e:
+        log(f"[WARN] 카카오 알림 실패: {e}")
+
+
 # ── KIStock API ────────────────────────────────────────────
 class KIStockAPI:
     def __init__(self):
@@ -72,17 +272,25 @@ class KIStockAPI:
             self.access_token = data.get("access_token", "")
             expires = data.get("access_token_token_expired", "")
             if not self.access_token:
-                log(f"[ERROR] 토큰 발급 실패 — 응답: {data}")
+                msg = f"토큰 발급 실패 — 응답: {data}"
+                log(f"[ERROR] {msg}")
+                slack_error(msg)
                 sys.exit(1)
             log(f"[OK] 토큰 발급 성공 (만료: {expires})")
         except requests.exceptions.ConnectionError as e:
-            log(f"[ERROR] API 서버 연결 실패: {e}")
+            msg = f"API 서버 연결 실패: {e}"
+            log(f"[ERROR] {msg}")
+            slack_error(msg)
             sys.exit(1)
         except requests.exceptions.HTTPError as e:
-            log(f"[ERROR] 토큰 발급 HTTP 오류: {e} — {r.text[:300]}")
+            msg = f"토큰 발급 HTTP 오류: {e} — {r.text[:300]}"
+            log(f"[ERROR] {msg}")
+            slack_error(msg)
             sys.exit(1)
         except Exception as e:
-            log(f"[ERROR] 토큰 발급 예외: {e}")
+            msg = f"토큰 발급 예외: {e}"
+            log(f"[ERROR] {msg}")
+            slack_error(msg)
             sys.exit(1)
 
     def _headers(self, tr_id: str) -> dict:
@@ -128,15 +336,23 @@ class KIStockAPI:
             log(f"[ERROR] 잔고 조회 예외: {e}")
             return {"output1": [], "output2": [{}]}
 
+    # ETF/주식 구분 자동 감지
+    ETF_MARKET_CODES = {
+        "102110", "133690", "148020", "152100", "157490",
+        "229200", "251340", "261240", "273130", "278530",
+        "305720", "381170", "448290", "481190",
+    }
+
     def get_daily(self, symbol: str, n: int = 60) -> list:
-        """일별 시세 조회 — 주식/ETF 공통 (FHKST03010100)"""
+        """일별 시세 조회 — 주식/ETF 자동 구분 (FHKST03010100)"""
         url = f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice"
         today = datetime.now().strftime("%Y%m%d")
-        # 충분히 과거 날짜 (3년 전)
         from datetime import timedelta
         start = (datetime.now() - timedelta(days=365*3)).strftime("%Y%m%d")
+        # ETF는 시장구분코드 "E", 주식은 "J"
+        mrkt_div = "E" if symbol in self.ETF_MARKET_CODES else "J"
         params = {
-            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_COND_MRKT_DIV_CODE": mrkt_div,
             "FID_INPUT_ISCD": symbol,
             "FID_INPUT_DATE_1": start,
             "FID_INPUT_DATE_2": today,
@@ -145,7 +361,7 @@ class KIStockAPI:
         }
         try:
             r = requests.get(url, headers=self._headers("FHKST03010100"), params=params, timeout=15)
-            log(f"[API] {symbol} 시세 HTTP {r.status_code}")
+            log(f"[API] {symbol}({mrkt_div}) 시세 HTTP {r.status_code}")
             if r.status_code != 200:
                 log(f"[WARN] {symbol} 시세 오류: {r.text[:200]}")
                 return []
@@ -254,23 +470,6 @@ def generate_signal(stock: dict, daily_data: list) -> dict:
             "reason":f"홀드 {rt:+.1f}% RSI={rsi}","indicators":indicators}
 
 
-# ── 카카오 알림 ────────────────────────────────────────────
-def send_kakao(message: str):
-    if not KAKAO_TOKEN:
-        return
-    try:
-        requests.post(
-            "https://kapi.kakao.com/v2/api/talk/memo/default/send",
-            headers={"Authorization": f"Bearer {KAKAO_TOKEN}"},
-            data={"template_object": json.dumps({
-                "object_type": "text", "text": message,
-                "link": {"web_url": "https://github.com/turtler501m-ai/hanstockauto"}
-            })}, timeout=10
-        )
-    except Exception as e:
-        log(f"[WARN] 카카오 알림 실패: {e}")
-
-
 # ── 메인 ──────────────────────────────────────────────────
 def run():
     log("=" * 60)
@@ -293,8 +492,12 @@ def run():
 
     log(f"예수금: {cash:,}원 | 총평가: {tot_evlu:,}원 | 손익: {pnl:+,}원 | 보유: {len(stocks)}종목")
 
+    # 4. Slack 세션 시작 알림
+    slack_session_start(cash=cash, total=tot_evlu, stock_count=len(stocks))
+
     if not stocks:
         log("[WARN] 보유 종목 없음 — 매매 스킵")
+        slack_session_end([], cash, tot_evlu, pnl)
         return
 
     results = []
@@ -311,6 +514,7 @@ def run():
 
         log(f"  지표: RSI={ind['rsi']} SMA20={ind['sma20']:.0f} SMA60={ind['sma60']:.0f} BB({ind['bb_lo']:.0f}~{ind['bb_hi']:.0f})")
         log(f"  신호: {signal['action'].upper()} — {signal['reason']}")
+
         if signal["action"] != "hold":
             if signal["action"] == "buy":
                 cost = signal["qty"] * signal["price"]
@@ -323,14 +527,25 @@ def run():
             log(f"  주문 {'성공' if ok else '실패'}: {result.get('msg1','')}")
 
             results.append({
-                "name": name, "action": signal["action"],
+                "name": name, "symbol": sym, "action": signal["action"],
                 "qty": signal["qty"], "price": signal["price"],
-                "reason": signal["reason"], "ok": ok
+                "reason": signal["reason"], "ok": ok,
+                "indicators": ind,
             })
+
+            # 5. 개별 주문 Slack 알림
+            slack_order(
+                name=name, symbol=sym,
+                action=signal["action"],
+                qty=signal["qty"], price=signal["price"],
+                reason=signal["reason"], ok=ok,
+                indicators=ind,
+            )
+
             if ok and signal["action"] == "buy":
                 cash -= signal["qty"] * signal["price"]
 
-    # 결과 요약
+    # 6. 세션 종료 요약 알림 (Slack + 카카오)
     log("\n" + "=" * 60)
     if results:
         lines = [f"[세븐스플릿] {datetime.now().strftime('%m/%d %H:%M')}"]
@@ -344,6 +559,7 @@ def run():
     else:
         log("전체 종목 홀드 — 액션 없음")
 
+    slack_session_end(results=results, cash=cash, total=tot_evlu, pnl=pnl)
     log("자동매매 완료")
 
 
