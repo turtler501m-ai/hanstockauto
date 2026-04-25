@@ -6,7 +6,10 @@ import os
 import sys
 import json
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# ── KST 타임존 ────────────────────────────────────────────
+KST = timezone(timedelta(hours=9))
 
 # ── 설정 ──────────────────────────────────────────────────
 ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -28,7 +31,7 @@ BASE_URL = "https://openapi.koreainvestment.com:9443"
 
 # ── 로그 ──────────────────────────────────────────────────
 def log(msg: str):
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ts = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
     line = f"[{ts}] {msg}"
     print(line)
     log_file = os.environ.get("LOG_FILE", "")
@@ -548,7 +551,7 @@ def run():
     # 6. 세션 종료 요약 알림 (Slack + 카카오)
     log("\n" + "=" * 60)
     if results:
-        lines = [f"[세븐스플릿] {datetime.now().strftime('%m/%d %H:%M')}"]
+        lines = [f"[세븐스플릿] {datetime.now(KST).strftime('%m/%d %H:%M KST')}"]
         for r in results:
             e = "🟢" if r["action"] == "buy" else "🔴"
             lines.append(f"{e} {r['name']} {r['action'].upper()} {r['qty']}주 ({'성공' if r['ok'] else '실패'})")
