@@ -298,6 +298,7 @@ def run():
         log(f"  지표: RSI={ind['rsi']} SMA20={ind['sma20']:.0f} SMA60={ind['sma60']:.0f} BB({ind['bb_lo']:.0f}~{ind['bb_hi']:.0f})")
         log(f"  신호: {signal['action'].upper()} — {signal['reason']}")
 
+        if signal["action"] != "hold":
             if signal["action"] == "buy":
                 cost = signal["qty"] * signal["price"]
                 if cost > cash:
@@ -315,8 +316,6 @@ def run():
             })
             if ok and signal["action"] == "buy":
                 cash -= signal["qty"] * signal["price"]
-
-    # 결과 요약
     log("\n" + "=" * 60)
     if results:
         lines = [f"[세븐스플릿] {datetime.now().strftime('%m/%d %H:%M')}"]
