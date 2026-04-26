@@ -656,20 +656,43 @@ async function renderCandidates() {
             return;
         }
 
-        data.candidates.forEach((row) => {
+        const displayedCandidates = data.candidates.slice(0, 10);
+        displayedCandidates.forEach((row) => {
+            const stockName = row.name && row.name !== row.ticker ? row.name : '';
             const queueButton = Number(row.planned_qty || 0) > 0
                 ? `<button type="button" class="button-ghost queue-order"
                     data-symbol="${escapeHtml(row.ticker)}"
-                    data-name="${escapeHtml(row.ticker)}"
+                    data-name="${escapeHtml(row.name || row.ticker)}"
                     data-action="buy"
                     data-qty="${Number(row.planned_qty || 0)}"
                     data-price="${Number(row.limit_price || row.current_price || 0)}"
                     data-reason="${escapeHtml((row.reasons || []).join(', '))}"
                     data-source="candidate">승인대기</button>`
                 : '';
+
+            // 상세 근거 빌드
+            const reasonLines = (row.reasons || []).map(r => strategyReasonLabel(r));
+            const detailParts = [];
+            if (row.rsi != null) detailParts.push(`RSI ${formatNumber(row.rsi,1)}`);
+            if (row.rsi2 != null) detailParts.push(`RSI2 ${formatNumber(row.rsi2,1)}`);
+            if (row.macd_hist != null) detailParts.push(`MACD ${formatNumber(row.macd_hist,2)}`);
+            if (row.sma20 != null && row.sma60 != null) {
+                const trend = row.sma20 > row.sma60 ? '단기↑중기선 위' : '단기↓중기선 아래';
+                detailParts.push(trend);
+            }
+            if (row.bb_lo != null && row.current_price != null) {
+                const bbDist = ((row.current_price - row.bb_lo) / row.bb_lo * 100).toFixed(1);
+                detailParts.push(`볼밴하단+${bbDist}%`);
+            }
+            const detailSuffix = detailParts.length ? ` (${detailParts.join(' | ')})` : '';
+            const reasonText = reasonLines.join(' · ') + detailSuffix;
+
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td><span class="symbol-name">${escapeHtml(row.ticker)}</span></td>
+                <td>
+                    <span class="symbol-name">${escapeHtml(stockName || row.ticker)}</span>
+                    <span class="symbol-code">${stockName ? row.ticker : ''}</span>
+                </td>
                 <td>${pill(row.score, row.score >= 3 ? 'buy' : 'warn')}</td>
                 <td>${formatNumber(row.rsi, 1)} / ${formatNumber(row.rsi2, 1)}</td>
                 <td>${formatNumber(row.macd_hist, 2)}</td>
@@ -677,7 +700,7 @@ async function renderCandidates() {
                 <td>${Number(row.planned_qty || 0).toLocaleString()}</td>
                 <td>${formatCurrency(row.estimated_cost)}</td>
                 <td>
-                    <div class="reason-cell" title="${escapeHtml(translateReason((row.reasons || []).join(', ')))}">${escapeHtml(translateReason((row.reasons || []).join(', ')))}</div>
+                    <div class="reason-detail">${escapeHtml(reasonText)}</div>
                     ${queueButton}
                 </td>
             `;

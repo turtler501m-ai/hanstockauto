@@ -473,12 +473,17 @@ async def get_candidates(min_score: int = 2):
             order = order_by_symbol.get(candidate["ticker"], {})
             rows.append({
                 "ticker": candidate["ticker"],
+                "name": candidate.get("name", candidate["ticker"]),
                 "current_price": candidate["current_price"],
                 "score": candidate["score"],
                 "reasons": candidate["reasons"],
                 "rsi": candidate.get("rsi"),
                 "rsi2": candidate.get("rsi2"),
                 "macd_hist": candidate.get("macd_hist"),
+                "sma20": candidate.get("sma20"),
+                "sma60": candidate.get("sma60"),
+                "bb_lo": candidate.get("bb_lo"),
+                "bb_hi": candidate.get("bb_hi"),
                 "planned_qty": order.get("quantity", 0),
                 "limit_price": order.get("limit_price", 0),
                 "estimated_cost": order.get("estimated_cost", 0),
