@@ -1,4 +1,4 @@
-name: 세븐스플릿 자동매매
+name: Seven Split Auto Trading
 
 on:
   schedule:
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: '모의 실행 (실제 주문 없음)'
+        description: 'Block real orders'
         required: false
         default: 'true'
         type: choice
@@ -17,7 +17,7 @@ on:
           - 'true'
           - 'false'
       mode:
-        description: '실행 모드'
+        description: 'Run mode'
         required: false
         default: 'auto'
         type: choice
@@ -31,12 +31,12 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: 코드 체크아웃
+      - name: Checkout
         uses: actions/checkout@v4
         env:
           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-      - name: Python 환경 설정
+      - name: Set up Python
         uses: actions/setup-python@v5
         env:
           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -44,22 +44,21 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
-      - name: 의존성 설치
+      - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: 폴더 생성
+      - name: Create runtime directories
         run: mkdir -p logs data
 
-      - name: 자동매매 실행
+      - name: Run trader
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           KISTOCK_APP_KEY: ${{ secrets.KISTOCK_APP_KEY }}
           KISTOCK_APP_SECRET: ${{ secrets.KISTOCK_APP_SECRET }}
           KISTOCK_ACCOUNT: ${{ secrets.KISTOCK_ACCOUNT }}
-          KAKAO_TOKEN: ${{ secrets.KAKAO_TOKEN }}
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}   # ← 추가
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
-          TRADING_ENV: ${{ vars.TRADING_ENV || 'real' }}
+          ENABLE_LIVE_TRADING: ${{ vars.ENABLE_LIVE_TRADING || 'false' }}
+          TRADING_ENV: ${{ vars.TRADING_ENV || 'demo' }}
           SPLIT_N: ${{ vars.SPLIT_N || '7' }}
           STOP_LOSS_PCT: ${{ vars.STOP_LOSS_PCT || '-15' }}
           TAKE_PROFIT: ${{ vars.TAKE_PROFIT || '30' }}
@@ -71,9 +70,9 @@ jobs:
           CASH_BUFFER: ${{ vars.CASH_BUFFER || '0.20' }}
           MAX_DAILY_LOSS_PCT: ${{ vars.MAX_DAILY_LOSS_PCT || '3.0' }}
           LOG_FILE: logs/trade-${{ github.run_number }}.log
-        run: python src/trader.py 2>&1 | tee $LOG_FILE
+        run: python src/trader.py 2>&1 | tee "$LOG_FILE"
 
-      - name: 실행 결과 업로드
+      - name: Upload run artifacts
         if: always()
         uses: actions/upload-artifact@v4
         env:

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vendor Hub</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <header>
+            <h1>AI Trading <span class="highlight">Vendor Hub</span></h1>
+            <div class="header-actions">
+                <a class="nav-button" href="/">Trading Dashboard</a>
+                <a class="nav-button" href="/finrl">FinRL Dashboard</a>
+                <div class="status-indicator">
+                    <span class="dot live"></span> Source Inventory
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <section class="status-banner ok" id="vendor-status">Loading vendor repositories...</section>
+
+            <section class="summary-grid" id="vendor-summary"></section>
+
+            <div class="main-grid">
+                <section class="card glass panel-settings">
+                    <h2>Repository Inventory</h2>
+                    <div class="table-responsive">
+                        <table id="table-vendors">
+                            <thead>
+                                <tr>
+                                    <th>Project</th>
+                                    <th>License</th>
+                                    <th>Files</th>
+                                    <th>Python</th>
+                                    <th>Notebooks</th>
+                                    <th>Adapter</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="card glass panel-signals">
+                    <h2>Implementation Map</h2>
+                    <div class="table-responsive">
+                        <table id="table-vendor-map">
+                            <thead>
+                                <tr>
+                                    <th>Project</th>
+                                    <th>Current Integration</th>
+                                    <th>Source Boundary</th>
+                                    <th>Next Practical Step</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/vendors.js"></script>
+</body>
+</html>

@@ -3,4 +3,5 @@ __pycache__/
 .env
 logs/
 *.log
+.runtime/
 .DS_Store

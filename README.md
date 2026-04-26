@@ -1,79 +1,99 @@
-# 세븐스플릿 자동매매 🤖
+# Seven Split Auto Trading
 
-> 박성현의 **세븐스플릿(7분할 매매)** 전략 + **Claude AI** + **KIStock API** 기반 GitHub Actions 완전 자동화 트레이딩 시스템
+KIS Open API based auto-trading bot for Korean stocks. It manages current holdings with split-order rules, scans watchlist candidates with technical indicators, stores trade history in SQLite, and exposes a FastAPI dashboard.
 
----
+## Features
 
-## 실행 스케줄
+- KIS Open API token caching
+- Balance, quote, daily chart, and cash order API calls
+- RSI, SMA, and Bollinger Band signals
+- Split buy/sell, stop-loss, and take-profit rules
+- Position sizing, cash buffer, and daily loss guard
+- SQLite trade history
+- Slack notifications
+- FastAPI dashboard
+- GitHub Actions scheduled runs
 
-| 시각 (KST) | 내용 |
-|---|---|
-| 08:50 | 장 시작 전 — 포트폴리오 분석 및 예약 주문 |
-| 10:00 | 오전 시장 체크 |
-| 13:00 | 오후 시장 체크 |
-| 15:00 | 장 마감 전 최종 체크 |
+## Schedule
 
----
+GitHub Actions cron uses UTC.
 
-## 세팅 방법
+| KST | Task |
+| --- | --- |
+| 08:50 | Pre-market scan |
+| 10:00 | Morning market check |
+| 13:00 | Afternoon market check |
+| 15:00 | Pre-close market check |
 
-### 1. Secrets 등록
-`Settings → Secrets and variables → Actions → Secrets`
+## Environment
 
-| Secret 이름 | 설명 |
-|---|---|
-| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com/keys) 에서 발급 |
-| `KISTOCK_APP_KEY` | 한국투자증권 OpenAPI 앱키 |
-| `KISTOCK_APP_SECRET` | 한국투자증권 OpenAPI 시크릿 |
-| `KISTOCK_ACCOUNT` | 계좌번호 (예: `5012345601`) |
-| `KAKAO_TOKEN` | 카카오 알림 토큰 (선택) |
+Copy `.env.example` to `.env` for local use, or configure the same values in GitHub Actions Secrets and Variables.
 
-### 2. Variables 등록 (선택 — 기본값 있음)
-`Settings → Secrets and variables → Actions → Variables`
+Required secrets:
 
-| Variable | 기본값 | 설명 |
-|---|---|---|
-| `SPLIT_N` | `7` | 분할 횟수 |
-| `STOP_LOSS_PCT` | `-15` | 손절 기준 % |
-| `TAKE_PROFIT` | `30` | 목표 수익 % |
-| `RSI_BUY` | `30` | RSI 매수 기준 |
-| `RSI_SELL` | `70` | RSI 매도 기준 |
+| Name | Description |
+| --- | --- |
+| `KISTOCK_APP_KEY` | KIS Open API app key |
+| `KISTOCK_APP_SECRET` | KIS Open API app secret |
+| `KISTOCK_ACCOUNT` | Account number plus product code, for example `1234567801` |
 
-### 3. 실제 주문 활성화
-`DRY_RUN` 기본값은 `true` (모의 실행).  
-실제 주문 실행하려면 워크플로우 수동 실행 시 `dry_run = false` 선택.
+Optional secret:
 
----
+| Name | Description |
+| --- | --- |
+| `SLACK_WEBHOOK_URL` | Slack incoming webhook URL |
 
-## 전략 로직
+Main variables:
 
+| Name | Default | Description |
+| --- | --- | --- |
+| `TRADING_ENV` | `demo` | `demo` or `real` |
+| `DRY_RUN` | `true` | Blocks real orders when true |
+| `ENABLE_LIVE_TRADING` | `false` | Final live-trading switch |
+| `SPLIT_N` | `7` | Split-order divisor |
+| `STOP_LOSS_PCT` | `-15` | Stop-loss return percent |
+| `TAKE_PROFIT` | `30` | Take-profit return percent |
+| `RSI_BUY` | `30` | RSI buy threshold |
+| `RSI_SELL` | `70` | RSI sell threshold |
+| `TOTAL_CAPITAL` | `10000000` | Reference capital |
+| `MAX_POSITIONS` | `3` | Maximum number of holdings |
+| `MAX_SINGLE_WEIGHT` | `0.30` | Maximum weight per symbol |
+| `CASH_BUFFER` | `0.20` | Cash reserve ratio |
+| `MAX_DAILY_LOSS_PCT` | `3.0` | Daily loss halt threshold |
+
+## Local Run
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+copy .env.example .env
 ```
-1. 잔고/보유종목 조회 (KIStock API)
-2. 종목별 기술지표 계산
-   - RSI(14), SMA20/60, 볼린저밴드(20, 2σ)
-3. 세븐스플릿 신호 생성
-   - 손절: 수익률 ≤ -15% → 전량 매도
-   - 분할매도: 수익률 ≥ 200% + RSI ≥ 70 → 1/7 매도
-   - 목표달성: 수익률 ≥ 30% + RSI ≥ 70 → 1/7 매도
-   - 분할매수: 수익률 ≤ -10% + RSI ≤ 30 + BB하단 → 1/7 매수
-   - 골든크로스: SMA20 > SMA60 + 손실구간 → 1/7 매수
-4. 주문 실행 (DRY_RUN=false 시)
-5. 카카오 알림 전송
+
+Run the trading engine:
+
+```powershell
+python src\trader.py
 ```
 
----
+Run the dashboard:
 
-## 수동 실행
+```powershell
+uvicorn src.dashboard:app --reload --host 127.0.0.1 --port 8000
+```
 
-`Actions → 세븐스플릿 자동매매 → Run workflow`
+Open `http://127.0.0.1:8000`.
 
-- `dry_run = true`: 분석만 (주문 없음)
-- `dry_run = false`: 실제 주문 실행 ⚠️
+## Order Guard
 
----
+Real orders are submitted only when all three conditions are true:
 
-## ⚠️ 주의사항
+- `DRY_RUN=false`
+- `TRADING_ENV=real`
+- `ENABLE_LIVE_TRADING=true`
 
-- 이 시스템은 **투자 참고용**입니다. 실제 투자 손익에 대한 책임은 본인에게 있습니다.
-- 처음에는 반드시 `DRY_RUN=true` 로 충분히 테스트 후 실거래 전환하세요.
-- KIStock API 실거래 신청은 한국투자증권 홈페이지에서 별도 신청 필요합니다.
+Demo API orders are submitted when `TRADING_ENV=demo` and `DRY_RUN=false`. If `DRY_RUN=true`, every order is logged without API order submission.
+
+## Disclaimer
+
+This project is an implementation template. API failures, network delays, bad market data, logic bugs, and fast market moves can cause losses. Validate in demo trading before using real capital.

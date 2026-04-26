@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FinRL Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <header>
+            <h1>FinRL <span class="highlight">Adapter Dashboard</span></h1>
+            <div class="header-actions">
+                <a class="nav-button" href="/vendors">Vendor Hub</a>
+                <a class="nav-button" href="/">Trading Dashboard</a>
+                <div class="status-indicator">
+                    <span class="dot live"></span> Vendor Source Loaded
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <section class="status-banner ok" id="finrl-status">Loading FinRL source status...</section>
+
+            <section class="summary-grid">
+                <div class="card glass">
+                    <h3>Vendor Path</h3>
+                    <div class="value compact-value" id="finrl-path">-</div>
+                </div>
+                <div class="card glass">
+                    <h3>License</h3>
+                    <div class="value" id="finrl-license">-</div>
+                </div>
+                <div class="card glass">
+                    <h3>Files</h3>
+                    <div class="value" id="finrl-files">-</div>
+                </div>
+            </section>
+
+            <div class="main-grid">
+                <section class="card glass panel-settings">
+                    <h2>FinRL Modules</h2>
+                    <div class="settings-grid" id="finrl-modules"></div>
+                </section>
+
+                <section class="card glass panel-signals">
+                    <h2>Adapted Pipeline</h2>
+                    <div class="table-responsive">
+                        <table id="table-finrl-pipeline">
+                            <thead>
+                                <tr>
+                                    <th>Stage</th>
+                                    <th>Current Source</th>
+                                    <th>FinRL Reference</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="card glass panel-ai">
+                    <div class="panel-header split-header">
+                        <h2>Weight Policy Output</h2>
+                        <button type="button" id="btn-finrl-allocation">Generate</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="table-finrl-allocation">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Score</th>
+                                    <th>Current</th>
+                                    <th>Target</th>
+                                    <th>Delta</th>
+                                    <th>Action</th>
+                                    <th>Queue</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/finrl.js"></script>
+</body>
+</html>
