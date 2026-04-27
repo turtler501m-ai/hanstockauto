@@ -19,6 +19,20 @@ from typing import Callable
 import requests
 import yfinance as yf
 
+from src.approval_service import ApprovalService
+from src.execution_plan import build_execution_plan, candidate_order_to_plan_row, signal_to_plan_row
+from src.execution_service import ExecutionContext, submit_order_request
+from src.kis_client import KISClient, KISClientConfig
+from src.notifications import (
+    build_candidates_payload,
+    build_error_payload,
+    build_order_payload,
+    build_session_end_payload,
+    build_session_start_payload,
+    send_slack_message,
+)
+from src.repositories import ApprovalRepository
+
 try:
     from dotenv import load_dotenv
 except ImportError:  # pragma: no cover - optional in GitHub Actions
@@ -76,6 +90,28 @@ def connect_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode=MEMORY")
     return conn
+
+
+def approval_now() -> str:
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def get_approval_service() -> ApprovalService:
+    return ApprovalService(ApprovalRepository(connect_db), now_fn=approval_now)
+
+
+def build_kis_client_config() -> KISClientConfig:
+    return KISClientConfig(
+        base_url=BASE_URL,
+        app_key=KISTOCK_APP_KEY,
+        app_secret=KISTOCK_APP_SECRET,
+        account_no=KISTOCK_ACCOUNT,
+        trading_env=TRADING_ENV,
+        token_cache_path=DATA_DIR / "kis_token.json",
+        request_timeout_seconds=15,
+        circuit_cooldown_seconds=int(os.environ.get("KIS_CIRCUIT_COOLDOWN_SECONDS", "60")),
+        circuit_max_errors=5,
+    )
 
 WATCHLIST = [
     "005930",  # Samsung Electronics
@@ -175,40 +211,27 @@ def check_secrets() -> None:
 
 
 def send_slack(text: str = "", blocks: list | None = None, color: str | None = None) -> None:
-    if not SLACK_WEBHOOK_URL:
-        return
-    if color and blocks:
-        payload = {"attachments": [{"color": color, "blocks": blocks, "fallback": text}]}
-    elif blocks:
-        payload = {"text": text, "blocks": blocks}
-    else:
-        payload = {"text": text}
-    try:
-        r = HTTP.post(SLACK_WEBHOOK_URL, json=payload, timeout=10)
-        if r.status_code != 200:
-            log(f"[WARN] Slack send failed HTTP {r.status_code}: {r.text[:100]}")
-    except Exception as e:
-        log(f"[WARN] Slack exception: {e}")
+    send_slack_message(
+        webhook_url=SLACK_WEBHOOK_URL,
+        session=HTTP,
+        text=text,
+        blocks=blocks,
+        color=color,
+        log_fn=log,
+    )
 
 
 def slack_session_start(cash: int, total: int, stock_count: int) -> None:
-    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M KST")
     mode = "REAL" if REAL_ORDERS_ENABLED else ("DEMO" if ORDER_SUBMISSION_ENABLED else "DRY_RUN")
-    send_slack(
-        text=f"Seven Split started at {now}",
-        blocks=[
-            {"type": "header", "text": {"type": "plain_text", "text": "Seven Split Auto Trading"}},
-            {"type": "section", "fields": [
-                {"type": "mrkdwn", "text": f"*Time*\n{now}"},
-                {"type": "mrkdwn", "text": f"*Mode*\n{mode}"},
-                {"type": "mrkdwn", "text": f"*API Env*\n{TRADING_ENV}"},
-                {"type": "mrkdwn", "text": f"*Cash*\n{cash:,} KRW"},
-                {"type": "mrkdwn", "text": f"*Total Value*\n{total:,} KRW"},
-                {"type": "mrkdwn", "text": f"*Holdings*\n{stock_count}"},
-            ]},
-        ],
-        color="#2196F3",
+    payload = build_session_start_payload(
+        cash=cash,
+        total=total,
+        stock_count=stock_count,
+        now=datetime.now(KST),
+        mode=mode,
+        trading_env=TRADING_ENV,
     )
+    send_slack_message(webhook_url=SLACK_WEBHOOK_URL, session=HTTP, log_fn=log, **payload)
 
 
 def slack_order(
@@ -221,79 +244,24 @@ def slack_order(
     ok: bool,
     indicators: dict,
 ) -> None:
-    action_label = "BUY" if action == "buy" else "SELL"
-    status = "OK" if ok else "FAILED"
-    color = "#36a64f" if ok else "#e74c3c"
-    price_str = f"{price:,} KRW" if price else "market"
-    amount_str = f"{qty * price:,} KRW" if price else "-"
-    rsi_val = indicators.get("rsi", "-")
-    rsi_str = f"{rsi_val:.1f}" if isinstance(rsi_val, float) else str(rsi_val)
-    send_slack(
-        text=f"{action_label} {name} {qty} shares {status}",
-        blocks=[
-            {"type": "section", "text": {"type": "mrkdwn", "text": f"*{action_label}* {name} (`{symbol}`) {status}"}},
-            {"type": "section", "fields": [
-                {"type": "mrkdwn", "text": f"*Qty*\n{qty}"},
-                {"type": "mrkdwn", "text": f"*Price*\n{price_str}"},
-                {"type": "mrkdwn", "text": f"*Amount*\n{amount_str}"},
-                {"type": "mrkdwn", "text": f"*RSI*\n{rsi_str}"},
-                {"type": "mrkdwn", "text": f"*SMA20/60*\n{indicators.get('sma20', 0):.0f} / {indicators.get('sma60', 0):.0f}"},
-                {"type": "mrkdwn", "text": f"*Return*\n{indicators.get('rt', 0):+.2f}%"},
-            ]},
-            {"type": "context", "elements": [{"type": "mrkdwn", "text": f"Reason: {reason}"}]},
-        ],
-        color=color,
-    )
+    payload = build_order_payload(name, symbol, action, qty, price, reason, ok, indicators)
+    send_slack_message(webhook_url=SLACK_WEBHOOK_URL, session=HTTP, log_fn=log, **payload)
 
 
 def slack_candidates(candidates: list[dict]) -> None:
-    if not candidates:
-        return
-    lines = [
-        f"*{c['ticker']}* {c['current_price']:,.0f} KRW | score {c['score']} | {', '.join(c['reasons'])}"
-        for c in candidates
-    ]
-    send_slack(
-        text=f"New buy candidates: {len(candidates)}",
-        blocks=[
-            {"type": "header", "text": {"type": "plain_text", "text": "Buy Candidates"}},
-            {"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(lines)}},
-        ],
-        color="#9C27B0",
-    )
+    payload = build_candidates_payload(candidates)
+    if payload:
+        send_slack_message(webhook_url=SLACK_WEBHOOK_URL, session=HTTP, log_fn=log, **payload)
 
 
 def slack_session_end(results: list[dict], cash: int, total: int, pnl: int) -> None:
-    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M KST")
-    buy_cnt = sum(1 for r in results if r["action"] == "buy" and r["ok"])
-    sell_cnt = sum(1 for r in results if r["action"] == "sell" and r["ok"])
-    fail_cnt = sum(1 for r in results if not r["ok"])
-    color = "#36a64f" if pnl >= 0 else "#e74c3c"
-    if not results:
-        send_slack(text=f"Seven Split finished at {now}: no orders", color="#9E9E9E")
-        return
-    lines = [f"{r['action'].upper()} {r['name']} {r['qty']} shares - {r['reason']}" for r in results]
-    send_slack(
-        text=f"Seven Split finished at {now}",
-        blocks=[
-            {"type": "header", "text": {"type": "plain_text", "text": "Seven Split Finished"}},
-            {"type": "section", "fields": [
-                {"type": "mrkdwn", "text": f"*Time*\n{now}"},
-                {"type": "mrkdwn", "text": f"*Total Value*\n{total:,} KRW"},
-                {"type": "mrkdwn", "text": f"*Cash*\n{cash:,} KRW"},
-                {"type": "mrkdwn", "text": f"*PnL*\n{pnl:+,} KRW"},
-                {"type": "mrkdwn", "text": f"*Buys*\n{buy_cnt}"},
-                {"type": "mrkdwn", "text": f"*Sells*\n{sell_cnt}"},
-            ]},
-            {"type": "section", "text": {"type": "mrkdwn", "text": "*Orders*\n" + "\n".join(lines)}},
-            {"type": "context", "elements": [{"type": "mrkdwn", "text": f"Failures: {fail_cnt}"}]},
-        ],
-        color=color,
-    )
+    payload = build_session_end_payload(results=results, cash=cash, total=total, pnl=pnl, now=datetime.now(KST))
+    send_slack_message(webhook_url=SLACK_WEBHOOK_URL, session=HTTP, log_fn=log, **payload)
 
 
 def slack_error(msg: str) -> None:
-    send_slack(text=f"Seven Split error: {msg}", color="#e74c3c")
+    payload = build_error_payload(msg)
+    send_slack_message(webhook_url=SLACK_WEBHOOK_URL, session=HTTP, log_fn=log, **payload)
 
 
 def init_db() -> None:
@@ -317,6 +285,10 @@ def init_db() -> None:
         )
 
 
+def init_approval_db() -> None:
+    get_approval_service().init_db()
+
+
 def save_trade(symbol: str, name: str, action: str, qty: int, price: int, reason: str, ok: bool) -> None:
     ts = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
     try:
@@ -330,6 +302,18 @@ def save_trade(symbol: str, name: str, action: str, qty: int, price: int, reason
             )
     except Exception as e:
         log(f"[WARN] Failed to save trade history: {e}")
+
+
+def queue_approval(
+    symbol: str,
+    name: str,
+    action: str,
+    qty: int,
+    price: int,
+    reason: str,
+    source: str = "scheduler",
+) -> int:
+    return get_approval_service().queue_approval(symbol, name, action, qty, price, reason, source)
 
 
 class KIStockAPI:
@@ -346,7 +330,9 @@ class KIStockAPI:
 
     def __init__(self, notify_errors: bool = True) -> None:
         self.notify_errors = notify_errors
+        self.client_config = build_kis_client_config()
         self.access_token = self._load_or_fetch_token()
+        self._client = KISClient(self.client_config, session=HTTP, access_token=self.access_token)
 
     def _load_or_fetch_token(self) -> str:
         if self.TOKEN_CACHE.exists():
@@ -402,27 +388,32 @@ class KIStockAPI:
             raise RuntimeError(msg) from e
 
     def _headers(self, tr_id: str) -> dict:
-        return {
-            "authorization": f"Bearer {self.access_token}",
-            "appkey": KISTOCK_APP_KEY,
-            "appsecret": KISTOCK_APP_SECRET,
-            "tr_id": tr_id,
-            "custtype": "P",
-            "Content-Type": "application/json",
-        }
+        self._client.access_token = self.access_token
+        return self._client.headers(tr_id)
 
     def _hashkey(self, payload: dict) -> str:
         try:
-            resp = HTTP.post(
-                f"{BASE_URL}/uapi/hashkey",
-                headers={"content-type": "application/json", "appkey": KISTOCK_APP_KEY, "appsecret": KISTOCK_APP_SECRET},
-                json=payload,
-                timeout=10,
-            )
-            return resp.json().get("HASH", "")
+            return self._client.create_hashkey(payload)
         except Exception as e:
             log(f"[WARN] Failed to create hashkey: {e}")
             return ""
+
+    def _sync_client_runtime(self) -> None:
+        self._client.access_token = self.access_token
+        self._client.circuit.error_count = self.__class__._err_count
+        self._client.circuit.opened_at = self.__class__._circuit_opened_at
+
+    def _sync_runtime_from_client(self) -> None:
+        self.__class__._err_count = self._client.circuit.error_count
+        self.__class__._circuit_opened_at = self._client.circuit.opened_at
+
+    def _delegate_client_call(self, method_name: str, *args, **kwargs):
+        self._sync_client_runtime()
+        method = getattr(self._client, method_name)
+        try:
+            return method(*args, **kwargs)
+        finally:
+            self._sync_runtime_from_client()
 
     def _check_circuit(self) -> None:
         cls = self.__class__
@@ -490,10 +481,10 @@ class KIStockAPI:
 
     def get_balance(self) -> dict:
         self._check_circuit()
-        tr_id = "VTTC8434R" if TRADING_ENV == "demo" else "TTTC8434R"
-        url = f"{BASE_URL}/uapi/domestic-stock/v1/trading/inquire-balance"
-        cano = KISTOCK_ACCOUNT[:8]
-        acnt = KISTOCK_ACCOUNT[8:] if len(KISTOCK_ACCOUNT) > 8 else "01"
+        tr_id = "VTTC8434R" if self.client_config.is_demo else "TTTC8434R"
+        url = f"{self.client_config.base_url}/uapi/domestic-stock/v1/trading/inquire-balance"
+        cano = self.client_config.account_prefix
+        acnt = self.client_config.account_suffix
         params = {
             "CANO": cano,
             "ACNT_PRDT_CD": acnt,
@@ -511,7 +502,12 @@ class KIStockAPI:
         last_error = ""
         for attempt in range(1, 3):
             try:
-                r = HTTP.get(url, headers=self._headers(tr_id), params=params, timeout=15)
+                r = HTTP.get(
+                    url,
+                    headers=self._headers(tr_id),
+                    params=params,
+                    timeout=self.client_config.request_timeout_seconds,
+                )
                 log(f"[API] Balance response HTTP {r.status_code} attempt={attempt}")
                 r.raise_for_status()
                 data = r.json()
@@ -532,10 +528,10 @@ class KIStockAPI:
         self._check_circuit()
         try:
             r = HTTP.get(
-                f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-price",
+                f"{self.client_config.base_url}/uapi/domestic-stock/v1/quotations/inquire-price",
                 headers=self._headers("FHKST01010100"),
                 params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": symbol},
-                timeout=10,
+                timeout=self.client_config.request_timeout_seconds,
             )
             output = r.json().get("output", {})
             self._ok()
@@ -554,78 +550,18 @@ class KIStockAPI:
 
         API 실패 시 빈 리스트를 반환하며, 호출자가 KOSPI_UNIVERSE로 폴백해야 한다.
         """
-        self._check_circuit()
-        url = f"{BASE_URL}/uapi/domestic-stock/v1/quotations/volume-rank"
-        params = {
-            "FID_COND_MRK_DIV_CODE": "J",
-            "FID_COND_SCR_DIV_CODE": "20171",
-            "FID_INPUT_ISCD": "0000",
-            "FID_DIV_CLS_CODE": "0",
-            "FID_BLNG_CLS_CODE": "0",
-            "FID_TRGT_CLS_CODE": "111111111",
-            "FID_TRGT_EXLS_CLS_CODE": "0000000000",
-            "FID_INPUT_PRICE_1": "",
-            "FID_INPUT_PRICE_2": "",
-            "FID_VOL_CNT": "",
-            "FID_INPUT_DATE_1": "",
-        }
         try:
-            r = HTTP.get(url, headers=self._headers("FHKUP03500000"), params=params, timeout=15)
-            log(f"[API] Volume rank HTTP {r.status_code}")
-            if r.status_code != 200:
-                self._fail()
-                return []
-            data = r.json()
-            if data.get("rt_cd") != "0":
-                log(f"[WARN] Volume rank failed: {data.get('msg1', '')}")
-                self._fail()
-                return []
-            self._ok()
-            codes = [
-                row.get("mksc_shrn_iscd", "").strip()
-                for row in data.get("output", [])
-                if row.get("mksc_shrn_iscd", "").strip()
-            ]
-            return codes[:top_n]
+            return self._delegate_client_call("get_volume_rank", top_n=top_n)
         except Exception as e:
             log(f"[WARN] Volume rank exception: {e}")
-            self._fail()
             return []
 
     def get_daily(self, symbol: str, n: int = 60) -> list:
-        self._check_circuit()
-        today = datetime.now(KST).strftime("%Y%m%d")
-        start = (datetime.now(KST) - timedelta(days=365 * 3)).strftime("%Y%m%d")
-        mrkt_div = "E" if symbol in self.ETF_MARKET_CODES else "J"
-        params = {
-            "FID_COND_MRKT_DIV_CODE": mrkt_div,
-            "FID_INPUT_ISCD": symbol,
-            "FID_INPUT_DATE_1": start,
-            "FID_INPUT_DATE_2": today,
-            "FID_PERIOD_DIV_CODE": "D",
-            "FID_ORG_ADJ_PRC": "0",
-        }
+        mrkt_div = "E" if symbol in self.client_config.etf_market_codes else "J"
         try:
-            r = HTTP.get(
-                f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
-                headers=self._headers("FHKST03010100"),
-                params=params,
-                timeout=15,
-            )
-            log(f"[API] Daily chart {symbol}({mrkt_div}) HTTP {r.status_code}")
-            if r.status_code != 200:
-                self._fail()
-                return []
-            data = r.json()
-            if data.get("rt_cd") != "0":
-                log(f"[WARN] Daily chart failed for {symbol}: {data.get('msg1', '')}")
-                self._fail()
-                return []
-            self._ok()
-            return data.get("output2", [])[:n]
+            return self._delegate_client_call("get_daily", symbol, n=n)
         except Exception as e:
             log(f"[WARN] Daily chart exception for {symbol}: {e}")
-            self._fail()
             return []
 
     def place_order(self, symbol: str, order_type: str, price: int, qty: int) -> dict:
@@ -634,14 +570,14 @@ class KIStockAPI:
             log(f"[{mode}] {order_type.upper()} {symbol} qty={qty} price={price or 'market'}")
             return {"rt_cd": "0", "msg1": mode}
 
-        if TRADING_ENV == "demo":
+        if self.client_config.is_demo:
             tr_id = "VTTC0802U" if order_type == "buy" else "VTTC0801U"
         else:
             tr_id = "TTTC0802U" if order_type == "buy" else "TTTC0801U"
-        url = f"{BASE_URL}/uapi/domestic-stock/v1/trading/order-cash"
+        url = f"{self.client_config.base_url}/uapi/domestic-stock/v1/trading/order-cash"
         body = {
-            "CANO": KISTOCK_ACCOUNT[:8],
-            "ACNT_PRDT_CD": KISTOCK_ACCOUNT[8:] if len(KISTOCK_ACCOUNT) > 8 else "01",
+            "CANO": self.client_config.account_prefix,
+            "ACNT_PRDT_CD": self.client_config.account_suffix,
             "PDNO": symbol,
             "ORD_DVSN": "01" if price == 0 else "00",
             "ORD_QTY": str(qty),
@@ -653,7 +589,7 @@ class KIStockAPI:
             headers["hashkey"] = hashkey
         self._check_circuit()
         try:
-            r = HTTP.post(url, headers=headers, json=body, timeout=15)
+            r = HTTP.post(url, headers=headers, json=body, timeout=self.client_config.request_timeout_seconds)
             r.raise_for_status()
             self._ok()
             return r.json()
@@ -1265,113 +1201,222 @@ def generate_signal(stock: dict, daily_data: list) -> dict:
 
 
 def check_daily_loss(pnl: int) -> bool:
+    return daily_loss_halt_triggered(pnl, notify=True)
+
+
+def daily_loss_halt_triggered(pnl: int, *, notify: bool) -> bool:
     if TOTAL_CAPITAL <= 0 or pnl >= 0:
         return False
     loss_pct = abs(pnl) / TOTAL_CAPITAL * 100
     if loss_pct >= MAX_DAILY_LOSS_PCT:
         msg = f"Daily loss limit reached: {loss_pct:.1f}% >= {MAX_DAILY_LOSS_PCT}%"
         log(f"[WARN] {msg}")
-        slack_error(msg)
+        if notify:
+            slack_error(msg)
         return True
     return False
 
 
-def run() -> None:
+def execute_plan_row(api: "KIStockAPI", context: ExecutionContext, row: dict) -> dict:
+    execution = submit_order_request(
+        context=context,
+        symbol=row["symbol"],
+        name=row["name"],
+        action=row["action"],
+        qty=row["qty"],
+        price=row["price"],
+        reason=row["reason"],
+        source=row.get("source", "scheduler"),
+        execute_order_fn=api.place_order,
+        save_trade_fn=save_trade,
+        queue_order_fn=queue_approval,
+    )
+    ok = execution.ok
+    if execution.decision == "queue":
+        log(f"Order QUEUED approval_id={execution.approval_id}: {execution.response_msg}")
+    elif execution.decision == "reject":
+        log(f"Order REJECTED: {execution.response_msg}")
+    else:
+        log(f"Order {'OK' if ok else 'FAILED'}: {execution.response_msg}")
+
+    result = {
+        **row,
+        "ok": ok,
+        "decision": execution.decision,
+    }
+    if execution.decision == "execute":
+        slack_order(
+            row["name"],
+            row["symbol"],
+            row["action"],
+            row["qty"],
+            row["price"],
+            row["reason"],
+            ok,
+            row.get("indicators", {}),
+        )
+    return result
+
+
+def build_runtime_plan(api: "KIStockAPI", balance_data: dict) -> dict:
+    stocks = balance_data.get("output1", [])
+    summary = balance_data.get("output2", [{}])[0]
+    cash = int(summary.get("dnca_tot_amt", 0))
+    total_eval = int(summary.get("tot_evlu_amt", 0))
+    pnl = int(summary.get("evlu_pfls_smtl_amt", 0))
+    daily_loss_halt = daily_loss_halt_triggered(pnl, notify=False)
+
+    position_plan_rows = []
+    candidate_plan_rows = []
+    held_symbols: set[str] = set()
+    candidate_scan: dict = {"candidates": [], "scan_summary": [], "scanned": 0, "min_score": 2, "scan_error": None}
+
+    available_cash = cash
+    for stock in stocks:
+        sym = stock.get("pdno", "")
+        name = stock.get("prdt_name", sym)
+        rt = float(stock.get("evlu_pfls_rt", 0))
+        held_symbols.add(sym)
+
+        daily = api.get_daily(sym, n=60)
+        signal = generate_signal(stock, daily)
+        plan_row = signal_to_plan_row(
+            sym,
+            name,
+            signal,
+            metadata={"return_pct": rt},
+        )
+        if plan_row is None:
+            continue
+        if signal["action"] == "buy":
+            if daily_loss_halt:
+                continue
+            cost = signal["qty"] * signal["price"]
+            if cost > available_cash:
+                continue
+        position_plan_rows.append(plan_row)
+        if plan_row["action"] == "buy":
+            available_cash -= plan_row["qty"] * plan_row["price"]
+
+    if not daily_loss_halt:
+        universe = build_scan_universe(api, held_symbols)
+        candidate_scan = find_candidates(held_symbols, universe=universe)
+        candidates = candidate_scan["candidates"]
+        scan_by_symbol = {item["ticker"]: item for item in candidate_scan.get("scan_summary", [])}
+        candidate_by_symbol = {
+            item["ticker"]: {**scan_by_symbol.get(item["ticker"], {}), **item}
+            for item in candidates
+        }
+        for order in build_orders(candidates, api.get_quote, len(held_symbols), available_cash):
+            sym = order["ticker"]
+            candidate = candidate_by_symbol.get(sym, {"ticker": sym, "name": sym, "score": order["score"], "reasons": order["reasons"]})
+            plan_row = candidate_order_to_plan_row(
+                candidate,
+                order,
+                metadata={"universe": "candidate_scan"},
+            )
+            plan_row["indicators"] = {
+                key: value
+                for key, value in {
+                    "rsi": candidate.get("rsi", "-"),
+                    "rsi2": candidate.get("rsi2"),
+                    "macd_hist": candidate.get("macd_hist"),
+                    "sma20": candidate.get("sma20"),
+                    "sma60": candidate.get("sma60"),
+                    "bb_lo": candidate.get("bb_lo"),
+                    "bb_hi": candidate.get("bb_hi"),
+                }.items()
+                if value is not None
+            }
+            candidate_plan_rows.append(plan_row)
+            available_cash -= plan_row["qty"] * plan_row["price"]
+
+    return {
+        "plan": build_execution_plan(position_rows=position_plan_rows, candidate_rows=candidate_plan_rows),
+        "position_plan_rows": position_plan_rows,
+        "candidate_plan_rows": candidate_plan_rows,
+        "candidate_scan": candidate_scan,
+        "daily_loss_halt": daily_loss_halt,
+        "cash": cash,
+        "remaining_cash": available_cash,
+        "total_eval": total_eval,
+        "pnl": pnl,
+        "held_symbols": held_symbols,
+    }
+
+
+def normalize_run_mode(mode: str) -> str:
+    normalized = (mode or "execute").strip().lower()
+    if normalized not in {"execute", "analysis_only"}:
+        raise ValueError(f"unsupported run mode: {mode}")
+    return normalized
+
+
+def build_execution_context(mode: str = "execute") -> ExecutionContext:
+    normalized_mode = normalize_run_mode(mode)
+    return ExecutionContext(
+        dry_run=DRY_RUN,
+        trading_env=TRADING_ENV,
+        enable_live_trading=ENABLE_LIVE_TRADING,
+        require_approval=REQUIRE_APPROVAL,
+        analysis_only=normalized_mode == "analysis_only",
+    )
+
+
+def run(mode: str = "execute") -> dict:
+    mode = normalize_run_mode(mode)
+    context = build_execution_context(mode)
     log("=" * 60)
-    log(f"Seven Split started | DRY_RUN={DRY_RUN} | ENABLE_LIVE_TRADING={ENABLE_LIVE_TRADING} | ENV={TRADING_ENV}")
+    log(
+        f"Seven Split started | MODE={mode} | DRY_RUN={DRY_RUN} | "
+        f"ENABLE_LIVE_TRADING={ENABLE_LIVE_TRADING} | ENV={TRADING_ENV}"
+    )
     log(f"Order submission enabled: {ORDER_SUBMISSION_ENABLED} | Real orders enabled: {REAL_ORDERS_ENABLED}")
     log("=" * 60)
 
     check_secrets()
     init_db()
+    init_approval_db()
     api = KIStockAPI()
 
     balance = api.get_balance()
     stocks = balance.get("output1", [])
-    summary = balance.get("output2", [{}])[0]
-    cash = int(summary.get("dnca_tot_amt", 0))
-    total_eval = int(summary.get("tot_evlu_amt", 0))
-    pnl = int(summary.get("evlu_pfls_smtl_amt", 0))
+    plan_bundle = build_runtime_plan(api, balance)
+    cash = plan_bundle["cash"]
+    total_eval = plan_bundle["total_eval"]
+    pnl = plan_bundle["pnl"]
 
     log(f"Cash={cash:,} KRW | Total={total_eval:,} KRW | PnL={pnl:+,} KRW | Holdings={len(stocks)}")
     slack_session_start(cash=cash, total=total_eval, stock_count=len(stocks))
 
     daily_loss_halt = check_daily_loss(pnl)
     results = []
-    held_symbols: set[str] = set()
 
-    for stock in stocks:
-        sym = stock.get("pdno", "")
-        name = stock.get("prdt_name", sym)
-        rt = float(stock.get("evlu_pfls_rt", 0))
-        held_symbols.add(sym)
-        log(f"--- {name}({sym}) return={rt:+.2f}% ---")
-
-        daily = api.get_daily(sym, n=60)
-        signal = generate_signal(stock, daily)
-        indicators = signal["indicators"]
+    for row in plan_bundle["position_plan_rows"]:
         log(
-            f"Indicators: RSI={indicators['rsi']} "
-            f"SMA20={indicators['sma20']:.0f} SMA60={indicators['sma60']:.0f} "
-            f"BB({indicators['bb_lo']:.0f}~{indicators['bb_hi']:.0f})"
+            f"--- {row['name']}({row['symbol']}) "
+            f"{row['action'].upper()} qty={row['qty']} price={row['price'] or 'market'} ---"
         )
-        log(f"Signal: {signal['action'].upper()} - {signal['reason']}")
-
-        if signal["action"] == "hold":
-            continue
-        if signal["action"] == "buy":
-            if daily_loss_halt:
-                log("[SKIP] Daily loss halt active")
-                continue
-            cost = signal["qty"] * signal["price"]
-            if cost > cash:
-                log(f"[SKIP] Not enough cash: need={cost:,}, cash={cash:,}")
-                continue
-
-        result = api.place_order(sym, signal["action"], signal["price"], signal["qty"])
-        ok = result.get("rt_cd") == "0"
-        log(f"Order {'OK' if ok else 'FAILED'}: {result.get('msg1', '')}")
-        save_trade(sym, name, signal["action"], signal["qty"], signal["price"], signal["reason"], ok)
-        row = {
-            "name": name,
-            "symbol": sym,
-            "action": signal["action"],
-            "qty": signal["qty"],
-            "price": signal["price"],
-            "reason": signal["reason"],
-            "ok": ok,
-            "indicators": indicators,
-        }
+        row = execute_plan_row(api, context, row)
         results.append(row)
-        slack_order(name, sym, signal["action"], signal["qty"], signal["price"], signal["reason"], ok, indicators)
-        if ok and signal["action"] == "buy":
-            cash -= signal["qty"] * signal["price"]
+        if row["decision"] == "execute" and row["ok"] and row["action"] == "buy":
+            cash -= row["qty"] * row["price"]
 
     if not daily_loss_halt:
-        log("--- Scanning for new buy candidates (AI universe) ---")
-        universe = build_scan_universe(api, held_symbols)
-        result = find_candidates(held_symbols, universe=universe)
-        candidates = result["candidates"]
+        result = plan_bundle["candidate_scan"]
+        candidates = plan_bundle["candidate_scan"]["candidates"]
         if candidates:
+            log("--- Scanning for new buy candidates (AI universe) ---")
             slack_candidates(candidates)
-            for order in build_orders(candidates, api.get_quote, len(held_symbols), cash):
-                sym = order["ticker"]
-                qty = order["quantity"]
-                price = order["limit_price"]
-                reason = f"new buy score={order['score']} ({', '.join(order['reasons'])})"
-                log(f"--- New BUY {sym} qty={qty} price={price:,} ---")
-                result = api.place_order(sym, "buy", price, qty)
-                ok = result.get("rt_cd") == "0"
-                log(f"Order {'OK' if ok else 'FAILED'}: {result.get('msg1', '')}")
-                save_trade(sym, sym, "buy", qty, price, reason, ok)
-                indicators = {"rsi": "-", "sma20": 0, "sma60": 0, "rt": 0}
-                results.append({"name": sym, "symbol": sym, "action": "buy", "qty": qty, "price": price, "reason": reason, "ok": ok, "indicators": indicators})
-                slack_order(sym, sym, "buy", qty, price, reason, ok, indicators)
-                if ok:
-                    cash -= qty * price
+            for row in plan_bundle["candidate_plan_rows"]:
+                log(f"--- New BUY {row['symbol']} qty={row['qty']} price={row['price']:,} ---")
+                row = execute_plan_row(api, context, row)
+                results.append(row)
+                if row["decision"] == "execute" and row["ok"]:
+                    cash -= row["qty"] * row["price"]
         else:
-            scanned = result["scanned"]
-            top = result["scan_summary"][:5]
+            scanned = plan_bundle["candidate_scan"]["scanned"]
+            top = plan_bundle["candidate_scan"]["scan_summary"][:5]
             log(f"[INFO] 매수 후보 없음 — {scanned}종목 분석, 기준점수 {result['min_score']}점")
             for item in top:
                 log(f"  {item['ticker']} score={item['score']} rsi={item['rsi']:.0f} reasons={item['reasons']}")
@@ -1380,6 +1425,14 @@ def run() -> None:
         log("No orders generated")
     slack_session_end(results=results, cash=cash, total=total_eval, pnl=pnl)
     log("Seven Split finished")
+    return {
+        "mode": mode,
+        "plan": plan_bundle["plan"],
+        "results": results,
+        "cash": cash,
+        "total_eval": total_eval,
+        "pnl": pnl,
+    }
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+from dataclasses import asdict
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -10,6 +11,8 @@ from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
 
+from src.approval_service import ApprovalCreateRequest, ApprovalNotFoundError, ApprovalStatusError  # noqa: E402
+from src.execution_service import submit_order_request  # noqa: E402
 from src import trader  # noqa: E402
 from src.trader import KIStockAPI  # noqa: E402
 
@@ -248,29 +251,85 @@ def _save_candidate_cache(
 
 def _init_approval_db() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with trader.connect_db() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS approvals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                symbol TEXT NOT NULL,
-                name TEXT NOT NULL,
-                action TEXT NOT NULL,
-                qty INTEGER NOT NULL,
-                price INTEGER NOT NULL,
-                reason TEXT,
-                source TEXT,
-                status TEXT NOT NULL,
-                response_msg TEXT
-            )
-            """
-        )
+    trader.init_approval_db()
 
 
-def _approval_row(row: sqlite3.Row) -> dict:
-    return dict(row)
+def _approval_row(row: object) -> dict:
+    return asdict(row)
+
+
+def _build_signal_row(holding: dict, signal: dict) -> dict:
+    indicators = signal.get("indicators", {})
+    return {
+        "symbol": holding["symbol"],
+        "name": holding["name"],
+        "qty": holding["qty"],
+        "price": holding["price"],
+        "rt": holding["rt"],
+        "action": signal.get("action", "hold"),
+        "signal_qty": signal.get("qty", 0),
+        "signal_price": signal.get("price", 0),
+        "reason": signal.get("reason", ""),
+        "rsi": indicators.get("rsi"),
+        "rsi2": indicators.get("rsi2"),
+        "sma20": indicators.get("sma20"),
+        "sma60": indicators.get("sma60"),
+        "bb_lo": indicators.get("bb_lo"),
+        "bb_hi": indicators.get("bb_hi"),
+        "strategy_score": indicators.get("strategy_score"),
+        "macd_hist": indicators.get("macd_hist"),
+    }
+
+
+def build_dashboard_signals(api: KIStockAPI, parsed: dict) -> list[dict]:
+    rows = []
+    for holding in parsed["holdings"]:
+        daily = api.get_daily(holding["symbol"], n=60)
+        signal = trader.generate_signal(holding["_raw"], daily)
+        rows.append(_build_signal_row(holding, signal))
+    return rows
+
+
+def _build_candidate_row(candidate: dict, order: dict, universe_size: int) -> dict:
+    return {
+        "ticker": candidate["ticker"],
+        "name": candidate.get("name", candidate["ticker"]),
+        "current_price": candidate["current_price"],
+        "score": candidate["score"],
+        "reasons": candidate["reasons"],
+        "rsi": candidate.get("rsi"),
+        "rsi2": candidate.get("rsi2"),
+        "macd_hist": candidate.get("macd_hist"),
+        "sma20": candidate.get("sma20"),
+        "sma60": candidate.get("sma60"),
+        "bb_lo": candidate.get("bb_lo"),
+        "bb_hi": candidate.get("bb_hi"),
+        "planned_qty": order.get("quantity", 0),
+        "limit_price": order.get("limit_price", 0),
+        "estimated_cost": order.get("estimated_cost", 0),
+        "universe_size": universe_size,
+    }
+
+
+def build_dashboard_candidates(api: KIStockAPI, parsed: dict, min_score: int = 2) -> dict:
+    held_symbols = {holding["symbol"] for holding in parsed["holdings"]}
+    universe = trader.build_scan_universe(api, held_symbols)
+    result = trader.find_candidates(held_symbols, universe=universe, min_score=min_score)
+    candidates = result["candidates"]
+    orders = trader.build_orders(candidates, api.get_quote, len(held_symbols), parsed["cash"])
+    order_by_symbol = {order["ticker"]: order for order in orders}
+    rows = [
+        _build_candidate_row(candidate, order_by_symbol.get(candidate["ticker"], {}), len(universe))
+        for candidate in candidates
+    ]
+    return {
+        "candidates": rows,
+        "universe_size": len(universe),
+        "scanned": result["scanned"],
+        "min_score": min_score,
+        "scan_summary": result["scan_summary"],
+        "scan_error": result.get("scan_error"),
+    }
 
 
 @app.get("/", response_class=FileResponse)
@@ -416,31 +475,7 @@ async def get_signals():
     try:
         api = _get_api()
         parsed = _parse_balance(_get_balance_data(api))
-        signals = []
-        for holding in parsed["holdings"]:
-            daily = api.get_daily(holding["symbol"], n=60)
-            signal = trader.generate_signal(holding["_raw"], daily)
-            indicators = signal.get("indicators", {})
-            signals.append({
-                "symbol": holding["symbol"],
-                "name": holding["name"],
-                "qty": holding["qty"],
-                "price": holding["price"],
-                "rt": holding["rt"],
-                "action": signal.get("action", "hold"),
-                "signal_qty": signal.get("qty", 0),
-                "signal_price": signal.get("price", 0),
-                "reason": signal.get("reason", ""),
-                "rsi": indicators.get("rsi"),
-                "rsi2": indicators.get("rsi2"),
-                "sma20": indicators.get("sma20"),
-                "sma60": indicators.get("sma60"),
-                "bb_lo": indicators.get("bb_lo"),
-                "bb_hi": indicators.get("bb_hi"),
-                "strategy_score": indicators.get("strategy_score"),
-                "macd_hist": indicators.get("macd_hist"),
-            })
-        return {"signals": signals}
+        return {"signals": build_dashboard_signals(api, parsed)}
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Signal analysis failed: {e}") from e
 
@@ -461,49 +496,44 @@ async def get_candidates(min_score: int = 2):
     try:
         api = _get_api()
         parsed = _parse_balance(_get_balance_data(api))
-        held_symbols = {holding["symbol"] for holding in parsed["holdings"]}
-        universe = trader.build_scan_universe(api, held_symbols)
-        result = trader.find_candidates(held_symbols, universe=universe, min_score=min_score)
-        candidates = result["candidates"]
-        scan_summary = result["scan_summary"]
-        orders = trader.build_orders(candidates, api.get_quote, len(held_symbols), parsed["cash"])
-        order_by_symbol = {order["ticker"]: order for order in orders}
-        rows = []
-        for candidate in candidates:
-            order = order_by_symbol.get(candidate["ticker"], {})
-            rows.append({
-                "ticker": candidate["ticker"],
-                "name": candidate.get("name", candidate["ticker"]),
-                "current_price": candidate["current_price"],
-                "score": candidate["score"],
-                "reasons": candidate["reasons"],
-                "rsi": candidate.get("rsi"),
-                "rsi2": candidate.get("rsi2"),
-                "macd_hist": candidate.get("macd_hist"),
-                "sma20": candidate.get("sma20"),
-                "sma60": candidate.get("sma60"),
-                "bb_lo": candidate.get("bb_lo"),
-                "bb_hi": candidate.get("bb_hi"),
-                "planned_qty": order.get("quantity", 0),
-                "limit_price": order.get("limit_price", 0),
-                "estimated_cost": order.get("estimated_cost", 0),
-                "universe_size": len(universe),
-            })
-        scanned = result["scanned"]
-        scan_error = result.get("scan_error")
+        payload = build_dashboard_candidates(api, parsed, min_score=min_score)
+        scanned = payload["scanned"]
         # scanned=0 은 yfinance 실패 등 데이터 수신 오류 — 캐시하지 않음
         if scanned > 0:
-            _save_candidate_cache(min_score, rows, scan_summary, scanned)
-        return {
-            "candidates": rows,
-            "universe_size": len(universe),
-            "scanned": scanned,
-            "min_score": min_score,
-            "scan_summary": scan_summary,
-            "scan_error": scan_error,
-        }
+            _save_candidate_cache(min_score, payload["candidates"], payload["scan_summary"], scanned)
+        return payload
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Candidate scan failed: {e}") from e
+
+
+def build_dashboard_execution_plan() -> dict:
+    api = _get_api()
+    balance_data = _get_balance_data(api)
+    parsed = _parse_balance(balance_data)
+    bundle = trader.build_runtime_plan(api, balance_data)
+    return {
+        "mode": "dashboard",
+        "plan": bundle["plan"],
+        "cash": parsed["cash"],
+        "remaining_cash": bundle["remaining_cash"],
+        "total_eval": parsed["total_eval"],
+        "pnl": parsed["pnl"],
+        "daily_loss_halt": bundle["daily_loss_halt"],
+        "scanned": bundle["candidate_scan"]["scanned"],
+        "scan_error": bundle["candidate_scan"].get("scan_error"),
+    }
+
+
+@app.get("/api/execution-plan")
+async def get_execution_plan():
+    missing = _required_env_missing()
+    if missing:
+        raise HTTPException(status_code=503, detail=f"Missing environment variables: {', '.join(missing)}")
+
+    try:
+        return build_dashboard_execution_plan()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Execution plan failed: {e}") from e
 
 
 @app.get("/api/ai-allocation")
@@ -656,13 +686,7 @@ async def get_approvals(limit: int = 50):
         raise HTTPException(status_code=400, detail="limit must be greater than 0")
     limit = min(limit, 200)
 
-    _init_approval_db()
-    with trader.connect_db() as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT * FROM approvals ORDER BY id DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+    rows = trader.get_approval_service().list_approvals(limit=limit)
     return {"approvals": [_approval_row(row) for row in rows]}
 
 
@@ -684,33 +708,29 @@ async def create_approval(payload: dict = Body(...)):
     name = str(payload.get("name") or symbol)
     reason = str(payload.get("reason") or "")
     source = str(payload.get("source") or "dashboard")
-    now = trader.datetime.now(trader.KST).strftime("%Y-%m-%d %H:%M:%S")
-
-    _init_approval_db()
-    with trader.connect_db() as conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO approvals
-            (created_at, updated_at, symbol, name, action, qty, price, reason, source, status, response_msg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '')
-            """,
-            (now, now, symbol, name, action, qty, price, reason, source),
+    approval_id = trader.get_approval_service().create_approval(
+        ApprovalCreateRequest(
+            symbol=symbol,
+            name=name,
+            action=action,
+            qty=qty,
+            price=price,
+            reason=reason,
+            source=source,
         )
-        approval_id = cursor.lastrowid
+    )
     return {"id": approval_id, "status": "pending"}
 
 
 def _load_pending_approval(approval_id: int) -> dict:
-    _init_approval_db()
-    with trader.connect_db() as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="approval not found")
-    item = _approval_row(row)
-    if item["status"] != "pending":
-        raise HTTPException(status_code=409, detail=f"approval is already {item['status']}")
-    return item
+    service = trader.get_approval_service()
+    try:
+        row = service.get_pending_approval(approval_id)
+    except ApprovalNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ApprovalStatusError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return _approval_row(row)
 
 
 @app.post("/api/approvals/{approval_id}/approve")
@@ -718,39 +738,39 @@ async def approve_order(approval_id: int):
     item = _load_pending_approval(approval_id)
     try:
         api = _get_api()
-        result = api.place_order(item["symbol"], item["action"], item["price"], item["qty"])
-        ok = result.get("rt_cd") == "0"
-        status = "executed" if ok else "failed"
-        response_msg = result.get("msg1", "")
-        trader.save_trade(
-            item["symbol"],
-            item["name"],
-            item["action"],
-            item["qty"],
-            item["price"],
-            item["reason"],
-            ok,
+        execution = submit_order_request(
+            context=trader.build_execution_context("execute"),
+            symbol=item["symbol"],
+            name=item["name"],
+            action=item["action"],
+            qty=item["qty"],
+            price=item["price"],
+            reason=item["reason"],
+            source=item.get("source") or "dashboard",
+            execute_order_fn=api.place_order,
+            save_trade_fn=trader.save_trade,
+            allow_approval_bypass=True,
         )
+        status = "executed" if execution.ok and execution.decision == "execute" else "failed"
+        response_msg = execution.response_msg
     except Exception as e:
         status = "failed"
         response_msg = str(e)
 
-    now = trader.datetime.now(trader.KST).strftime("%Y-%m-%d %H:%M:%S")
-    with trader.connect_db() as conn:
-        conn.execute(
-            "UPDATE approvals SET status = ?, response_msg = ?, updated_at = ? WHERE id = ?",
-            (status, response_msg, now, approval_id),
-        )
+    trader.get_approval_service().update_status(
+        approval_id,
+        status=status,
+        response_msg=response_msg,
+    )
     return {"id": approval_id, "status": status, "response_msg": response_msg}
 
 
 @app.post("/api/approvals/{approval_id}/reject")
 async def reject_order(approval_id: int):
-    _load_pending_approval(approval_id)
-    now = trader.datetime.now(trader.KST).strftime("%Y-%m-%d %H:%M:%S")
-    with trader.connect_db() as conn:
-        conn.execute(
-            "UPDATE approvals SET status = 'rejected', response_msg = 'Rejected by dashboard', updated_at = ? WHERE id = ?",
-            (now, approval_id),
-        )
+    try:
+        trader.get_approval_service().reject_approval(approval_id)
+    except ApprovalNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ApprovalStatusError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
     return {"id": approval_id, "status": "rejected"}

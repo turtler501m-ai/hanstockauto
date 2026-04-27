@@ -1,0 +1,37 @@
+# 구조개선안 업데이트
+
+## 기준 문서
+
+- 기존 문서: [.doc/구조개선안](./구조개선안)
+- 이 문서는 이후 작업을 위한 최신 메모다.
+
+## 현재 상태 요약
+
+- 스케줄러는 `src/scheduler.py`로 분리되어 있다.
+- GitHub Actions는 `python -m src.scheduler --mode ...`를 호출한다.
+- 주문 정책은 `src/execution_service.py`로 통합되었다.
+- 승인 저장소/서비스는 `src/repositories.py`, `src/approval_service.py`로 분리되었다.
+- 실행계획은 `src/execution_plan.py`와 `build_runtime_plan()`으로 정리되었다.
+- Slack payload는 `src/notifications.py`로 분리되었다.
+- KIS client는 `src/kis_client.py`로 추출되었다.
+- 대시보드는 `/api/execution-plan`을 포함하지만, UI는 기존 레이아웃을 유지한다.
+
+## 테스트 기준
+
+마지막 확인 기준은 전체 `unittest` 87개 통과였다.
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest tests.test_execution_policy tests.test_approval_service tests.test_scheduler_modes tests.test_execution_plan tests.test_notifications tests.test_runtime_plan tests.test_dashboard_execution_plan tests.test_dashboard_plan_views tests.test_dashboard_signal_candidate_alignment tests.test_runtime_dashboard_alignment tests.test_kis_client tests.test_trader_kis_integration tests.test_trader_core -v
+```
+
+## 다음 작업 우선순위
+
+1. `KIStockAPI`의 남은 조회/주문 메서드를 `KISClient` 쪽으로 더 위임한다.
+2. `trader.py`의 전략 계산과 실행 루프를 더 분리한다.
+3. `Execution Plan`을 대시보드 UI에 노출할지 결정한다.
+4. 그 결정에 맞춰 프론트와 테스트를 정리한다.
+
+## 주의사항
+
+- 기존 `.doc/구조개선안`은 지우지 않는다.
+- 이후 문서 갱신은 이 파일에 덧붙이거나, 별도 업데이트 파일로만 만든다.

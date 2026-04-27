@@ -1,0 +1,218 @@
+# 프로젝트 구조개선안
+
+## 1. 목적
+
+이 문서는 자동매매 스케줄러와 웹 대시보드의 구조 개선 진행 상태를 정리하고, 다음 작업을 바로 이어서 할 수 있게 남기는 용도이다.
+
+핵심 목표는 다음과 같다.
+
+- 스케줄러와 대시보드가 같은 실행 정책을 쓰게 한다.
+- 주문 정책을 한 곳에서 판단하게 만든다.
+- `trader.py`의 책임을 줄이고, KIS 클라이언트와 실행계획을 분리한다.
+- 대시보드는 조회/승인/실행계획 확인에 집중하게 한다.
+
+## 2. 현재 구현 상태
+
+### 2-1. 스케줄러
+
+구현된 상태:
+
+- `src/scheduler.py`가 별도 진입점으로 존재한다.
+- GitHub Actions는 `python -m src.scheduler --mode ...`를 호출한다.
+- `analysis_only`와 `execute` 모드를 구분한다.
+- `ExecutionContext`와 `ExecutionService`를 통해 주문 결정이 `queue`, `execute`, `reject`로 분기된다.
+
+관련 파일:
+
+- [src/scheduler.py](../src/scheduler.py)
+- [src/execution_service.py](../src/execution_service.py)
+- [.github/workflows/auto_trade.yml](../.github/workflows/auto_trade.yml)
+
+현재 의미:
+
+- 스케줄러는 더 이상 단순 `python src/trader.py` 실행기가 아니다.
+- 분석과 집행이 같은 정책 계층을 공유한다.
+
+### 2-2. 대시보드
+
+구현된 상태:
+
+- `src/dashboard.py`가 FastAPI 백엔드 역할을 유지한다.
+- `/api/signals`, `/api/candidates`, `/api/approvals`, `/api/execution-plan`이 존재한다.
+- `build_dashboard_signals()`와 `build_dashboard_candidates()` helper로 화면용 데이터 shaping을 모았다.
+- 승인 저장소와 승인 서비스로 DB 직접 접근을 정리했다.
+
+관련 파일:
+
+- [src/dashboard.py](../src/dashboard.py)
+- [web/templates/index.html](../web/templates/index.html)
+- [web/static/js/app.js](../web/static/js/app.js)
+- [web/static/css/style.css](../web/static/css/style.css)
+
+현재 의미:
+
+- 화면 디자인은 기존과 거의 동일하다.
+- 내부 데이터 계약은 plan 중심으로 조금 더 정리되었다.
+- 아직 실행계획 전용 섹션은 화면에 노출되지 않았다.
+
+### 2-3. 공통 코어
+
+구현된 상태:
+
+- `src/trader.py`가 여전히 메인 코어지만, 일부 책임이 분리되었다.
+- 실행계획 생성은 `build_runtime_plan()`으로 묶였다.
+- Slack payload 생성은 `src/notifications.py`로 이동했다.
+- 승인 저장소는 `src/repositories.py`와 `src/approval_service.py`로 분리되었다.
+- KIS client는 `src/kis_client.py`로 추출되었다.
+
+관련 파일:
+
+- [src/trader.py](../src/trader.py)
+- [src/execution_plan.py](../src/execution_plan.py)
+- [src/notifications.py](../src/notifications.py)
+- [src/repositories.py](../src/repositories.py)
+- [src/approval_service.py](../src/approval_service.py)
+- [src/kis_client.py](../src/kis_client.py)
+
+### 2-4. 테스트
+
+현재 확인된 상태:
+
+- 핵심 정책 테스트가 추가되었다.
+- 대시보드 계약 테스트가 추가되었다.
+- `KIStockAPI`와 `KISClient` 경계 테스트가 추가되었다.
+- 전체 `unittest`는 87개 기준으로 통과했다.
+
+관련 파일:
+
+- [tests/test_execution_policy.py](../tests/test_execution_policy.py)
+- [tests/test_approval_service.py](../tests/test_approval_service.py)
+- [tests/test_scheduler_modes.py](../tests/test_scheduler_modes.py)
+- [tests/test_execution_plan.py](../tests/test_execution_plan.py)
+- [tests/test_notifications.py](../tests/test_notifications.py)
+- [tests/test_runtime_plan.py](../tests/test_runtime_plan.py)
+- [tests/test_dashboard_execution_plan.py](../tests/test_dashboard_execution_plan.py)
+- [tests/test_dashboard_plan_views.py](../tests/test_dashboard_plan_views.py)
+- [tests/test_dashboard_signal_candidate_alignment.py](../tests/test_dashboard_signal_candidate_alignment.py)
+- [tests/test_runtime_dashboard_alignment.py](../tests/test_runtime_dashboard_alignment.py)
+- [tests/test_kis_client.py](../tests/test_kis_client.py)
+- [tests/test_trader_kis_integration.py](../tests/test_trader_kis_integration.py)
+
+## 3. 아직 남은 문제
+
+### 3-1. `trader.py`의 책임이 아직 큼
+
+남아 있는 영역:
+
+- `KIStockAPI` 본체
+- 지표 계산 함수
+- 신호 생성 함수
+- 후보 탐색/주문 계획 일부
+- 실행 루프 orchestration
+
+현재 상황:
+
+- `get_volume_rank()`와 `get_daily()`는 `_client` 위임 경계가 붙어 있다.
+- `get_balance()`, `get_quote()`, `place_order()`는 아직 trader-level request shape를 유지하는 쪽에 가깝다.
+- 따라서 구조는 나아졌지만, 완전 분리는 아니다.
+
+### 3-2. 대시보드 화면은 아직 크게 바뀌지 않음
+
+현재 상황:
+
+- 기존 카드형 레이아웃은 유지된다.
+- 실행계획은 API로만 추가되었다.
+- 사용자는 아직 별도 실행계획 섹션 없이 시그널/후보/승인 화면을 본다.
+
+### 3-3. 실행계획의 UI 노출 여부가 미정
+
+현재 상황:
+
+- 백엔드에는 `/api/execution-plan`이 있다.
+- 프론트는 아직 이를 메인 탭으로 보여주지 않는다.
+- 다음 작업에서 이 엔드포인트를 화면에 노출할지 결정해야 한다.
+
+## 4. 다음에 할 작업
+
+우선순위 순서로 정리한다.
+
+### 4-1. KIS client 위임 마무리
+
+목표:
+
+- `KIStockAPI`의 남은 조회/주문 메서드도 `KISClient` 쪽으로 더 옮긴다.
+- class-level circuit 상태와 client-level circuit 상태 동기화를 유지한다.
+- 현재 붙어 있는 request shape 테스트를 깨지 않는다.
+
+작업 후보:
+
+- `get_balance()` 요청 구성 정리
+- `get_quote()` 요청 구성 정리
+- `place_order()` 요청 구성 정리
+
+### 4-2. `trader.py` 추가 분리
+
+목표:
+
+- 전략 계산과 실행 루프를 더 분리한다.
+- `trader.py`를 facade 수준으로 줄인다.
+
+작업 후보:
+
+- `src/strategies/indicators.py`
+- `src/strategies/signal_strategy.py`
+- `src/services/portfolio_service.py`
+- `src/services/candidate_service.py`
+- `src/services/execution_service.py` 강화
+
+### 4-3. 대시보드 실행계획 화면 노출
+
+선택지:
+
+- 기존 화면 유지, 백엔드 정리만 계속한다.
+- `Execution Plan` 섹션을 추가해서 `/api/execution-plan`을 표시한다.
+- `Signals`와 `Candidates` 화면을 plan 중심 DTO로 더 합친다.
+
+권장 방향:
+
+- 운영 목적이면 `Execution Plan` 탭/섹션을 추가하는 것이 낫다.
+- 단순 조회 목적이면 현재 화면 유지가 더 안전하다.
+
+### 4-4. 테스트 추가
+
+추가하면 좋은 테스트:
+
+- `get_balance/get_quote/place_order`의 KIS client 위임 경계
+- dashboard helper 함수 단위 테스트
+- execution-plan UI 표시 계약 테스트
+
+## 5. 구조 원칙
+
+다음 원칙은 유지한다.
+
+- 주문 정책은 한 곳에서만 판단한다.
+- 승인 흐름은 대시보드와 스케줄러가 공유한다.
+- 배치 실행과 웹 조회는 진입점만 다르고 정책은 같아야 한다.
+- UI는 가능하면 데이터 계약만 알고, 비즈니스 규칙은 백엔드가 가진다.
+
+## 6. 현재 검증 기준
+
+마지막 확인 기준:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest tests.test_execution_policy tests.test_approval_service tests.test_scheduler_modes tests.test_execution_plan tests.test_notifications tests.test_runtime_plan tests.test_dashboard_execution_plan tests.test_dashboard_plan_views tests.test_dashboard_signal_candidate_alignment tests.test_runtime_dashboard_alignment tests.test_kis_client tests.test_trader_kis_integration tests.test_trader_core -v
+```
+
+결과:
+
+- 87개 테스트 통과
+- `KISClient` 경계와 대시보드 계약 테스트 포함
+
+## 7. 다음 세션 시작점
+
+다음에 이어서 할 때는 아래 순서가 가장 자연스럽다.
+
+1. `KIStockAPI`의 남은 메서드를 `KISClient`로 더 위임한다.
+2. `trader.py`의 전략/실행 분리를 더 진행한다.
+3. `Execution Plan`을 대시보드 UI에 넣을지 결정한다.
+4. 그 결정에 맞춰 프론트와 테스트를 정리한다.

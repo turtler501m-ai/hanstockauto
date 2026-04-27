@@ -1,0 +1,193 @@
+import unittest
+from unittest.mock import Mock, patch
+
+from src import trader
+
+
+class RuntimePlanTests(unittest.TestCase):
+    def make_api(self, *, balance, daily=None, quote=None):
+        api = Mock()
+        api.get_balance.return_value = balance
+        api.get_daily.return_value = daily if daily is not None else []
+        api.get_quote.return_value = quote if quote is not None else {"current": 0, "ask1": 0, "bid1": 0}
+        api.place_order = Mock(return_value={"rt_cd": "0", "msg1": "ok"})
+        return api
+
+    def test_run_combines_position_and_candidate_plan_rows(self):
+        balance = {
+            "output1": [
+                {
+                    "pdno": "005930",
+                    "prdt_name": "Samsung",
+                    "evlu_pfls_rt": "5.0",
+                }
+            ],
+            "output2": [
+                {
+                    "dnca_tot_amt": "1000000",
+                    "tot_evlu_amt": "2000000",
+                    "evlu_pfls_smtl_amt": "50000",
+                }
+            ],
+        }
+        api = self.make_api(balance=balance)
+
+        with (
+            patch("src.trader.check_secrets"),
+            patch("src.trader.init_db"),
+            patch("src.trader.init_approval_db"),
+            patch("src.trader.KIStockAPI", return_value=api),
+            patch("src.trader.slack_session_start"),
+            patch("src.trader.slack_candidates"),
+            patch("src.trader.slack_session_end"),
+            patch("src.trader.generate_signal", return_value={
+                "action": "sell",
+                "qty": 2,
+                "price": 71000,
+                "reason": "trim winner",
+                "indicators": {"rsi": 74, "sma20": 10, "sma60": 9, "bb_lo": 8, "bb_hi": 12},
+            }),
+            patch("src.trader.build_scan_universe", return_value=["000660"]),
+            patch("src.trader.find_candidates", return_value={
+                "candidates": [{"ticker": "000660", "name": "SK Hynix", "score": 4, "reasons": ["rsi", "macd"]}],
+                "scan_summary": [],
+                "scanned": 1,
+                "min_score": 2,
+                "scan_error": None,
+            }),
+            patch("src.trader.build_orders", return_value=[
+                {
+                    "ticker": "000660",
+                    "quantity": 3,
+                    "limit_price": 120000,
+                    "estimated_cost": 360360.0,
+                    "score": 4,
+                    "reasons": ["rsi", "macd"],
+                }
+            ]),
+            patch(
+                "src.trader.execute_plan_row",
+                side_effect=lambda _api, _context, row: {**row, "ok": True, "decision": "execute"},
+            ) as execute_plan_row,
+        ):
+            result = trader.run()
+
+        self.assertEqual([row["category"] for row in result["plan"]], ["position", "candidate"])
+        self.assertEqual([row["symbol"] for row in result["plan"]], ["005930", "000660"])
+        self.assertEqual([row["decision"] for row in result["results"]], ["execute", "execute"])
+        self.assertEqual([row["action"] for row in result["results"]], ["sell", "buy"])
+        self.assertEqual(execute_plan_row.call_count, 2)
+
+    def test_run_skips_new_buys_when_daily_loss_halt_is_active(self):
+        balance = {
+            "output1": [
+                {
+                    "pdno": "005930",
+                    "prdt_name": "Samsung",
+                    "evlu_pfls_rt": "-12.0",
+                }
+            ],
+            "output2": [
+                {
+                    "dnca_tot_amt": "1000000",
+                    "tot_evlu_amt": "2000000",
+                    "evlu_pfls_smtl_amt": "-400000",
+                }
+            ],
+        }
+        api = self.make_api(balance=balance)
+
+        with (
+            patch("src.trader.check_secrets"),
+            patch("src.trader.init_db"),
+            patch("src.trader.init_approval_db"),
+            patch("src.trader.KIStockAPI", return_value=api),
+            patch("src.trader.slack_session_start"),
+            patch("src.trader.slack_session_end"),
+            patch("src.trader.check_daily_loss", return_value=True),
+            patch("src.trader.generate_signal", return_value={
+                "action": "buy",
+                "qty": 1,
+                "price": 70000,
+                "reason": "average down",
+                "indicators": {"rsi": 25, "sma20": 10, "sma60": 11, "bb_lo": 9, "bb_hi": 12},
+            }),
+            patch("src.trader.find_candidates") as find_candidates,
+            patch("src.trader.execute_plan_row") as execute_plan_row,
+        ):
+            result = trader.run()
+
+        self.assertEqual(result["plan"], [])
+        self.assertEqual(result["results"], [])
+        execute_plan_row.assert_not_called()
+        find_candidates.assert_not_called()
+
+    def test_run_analysis_only_returns_plan_without_submitting_orders(self):
+        balance = {
+            "output1": [
+                {
+                    "pdno": "005930",
+                    "prdt_name": "Samsung",
+                    "evlu_pfls_rt": "8.0",
+                }
+            ],
+            "output2": [
+                {
+                    "dnca_tot_amt": "1000000",
+                    "tot_evlu_amt": "2000000",
+                    "evlu_pfls_smtl_amt": "50000",
+                }
+            ],
+        }
+        api = self.make_api(balance=balance)
+
+        with (
+            patch("src.trader.check_secrets"),
+            patch("src.trader.init_db"),
+            patch("src.trader.init_approval_db"),
+            patch("src.trader.KIStockAPI", return_value=api),
+            patch("src.trader.slack_session_start"),
+            patch("src.trader.slack_candidates"),
+            patch("src.trader.slack_session_end"),
+            patch("src.trader.generate_signal", return_value={
+                "action": "sell",
+                "qty": 1,
+                "price": 72000,
+                "reason": "take profit",
+                "indicators": {"rsi": 78, "sma20": 12, "sma60": 10, "bb_lo": 9, "bb_hi": 14},
+            }),
+            patch("src.trader.build_scan_universe", return_value=["000660"]),
+            patch("src.trader.find_candidates", return_value={
+                "candidates": [{"ticker": "000660", "name": "SK Hynix", "score": 3, "reasons": ["breakout"]}],
+                "scan_summary": [],
+                "scanned": 1,
+                "min_score": 2,
+                "scan_error": None,
+            }),
+            patch("src.trader.build_orders", return_value=[
+                {
+                    "ticker": "000660",
+                    "quantity": 2,
+                    "limit_price": 121000,
+                    "estimated_cost": 242242.0,
+                    "score": 3,
+                    "reasons": ["breakout"],
+                }
+            ]),
+            patch("src.trader.queue_approval", side_effect=[101, 102]) as queue_approval,
+            patch("src.trader.save_trade") as save_trade,
+            patch("src.trader.slack_order") as slack_order,
+        ):
+            result = trader.run(mode="analysis_only")
+
+        self.assertEqual([row["category"] for row in result["plan"]], ["position", "candidate"])
+        self.assertTrue(all(row["decision"] == "queue" for row in result["results"]))
+        self.assertTrue(all(row["ok"] for row in result["results"]))
+        self.assertEqual(queue_approval.call_count, 2)
+        api.place_order.assert_not_called()
+        save_trade.assert_not_called()
+        slack_order.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()
