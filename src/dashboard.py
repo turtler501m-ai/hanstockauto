@@ -281,7 +281,7 @@ def _init_approval_db() -> None:
         )
 
 
-def _approval_row(row: sqlite3.Row) -> dict:
+def _approval_row(row) -> dict:
     return dict(row)
 
 

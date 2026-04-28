@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HanStock AI 자동매매 관제센터</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/ai_dashboard.css?v=1">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="side-nav" aria-label="AI 자동매매 대시보드 메뉴">
+            <div class="brand-block">
+                <div class="brand-mark">HA</div>
+                <div>
+                    <strong>HanStock AI</strong>
+                    <span>Autonomous Trading Ops</span>
+                </div>
+            </div>
+            <nav>
+                <a class="active" href="#overview" data-icon="layout-dashboard">운영 개요</a>
+                <a href="#decisions" data-icon="brain-circuit">AI 판단</a>
+                <a href="#risk" data-icon="shield-check">리스크</a>
+                <a href="#execution" data-icon="route">주문 라우터</a>
+                <a href="#models" data-icon="blocks">모델 관리</a>
+                <a href="#audit" data-icon="file-search">감사 로그</a>
+            </nav>
+            <div class="mode-panel">
+                <span>운영 모드</span>
+                <strong>Approval Mode</strong>
+                <small>실계좌 주문 전 수동 승인</small>
+            </div>
+        </aside>
+
+        <main class="workspace">
+            <header class="topbar" id="overview">
+                <div>
+                    <p class="eyebrow">AI 자동매매 관제센터</p>
+                    <h1>데이터, 모델, 리스크, 주문을 한 화면에서 통제</h1>
+                </div>
+                <div class="topbar-actions">
+                    <a class="ghost-link" href="/">기존 대시보드</a>
+                    <button type="button" class="icon-button" id="btn-refresh" aria-label="새로고침" title="새로고침" data-icon="refresh-cw"></button>
+                    <button type="button" class="danger-button" id="btn-kill-switch" data-icon="octagon-alert">Kill Switch</button>
+                </div>
+            </header>
+
+            <section class="status-strip" aria-label="시스템 상태">
+                <div class="status-item ok"><span>데이터</span><strong>KIS 12초 전</strong><small>정상 수집</small></div>
+                <div class="status-item ok"><span>AI 모델</span><strong>ranker_lgbm_v3</strong><small>검증 통과</small></div>
+                <div class="status-item warn"><span>주문 권한</span><strong>승인 필요</strong><small>자동 신규매수 차단</small></div>
+                <div class="status-item ok"><span>서킷브레이커</span><strong>닫힘</strong><small>0 / 5 오류</small></div>
+            </section>
+
+            <section class="metric-grid">
+                <article class="metric-tile"><span>총 평가자산</span><strong>128,420,000원</strong><small class="up">오늘 +0.84%</small></article>
+                <article class="metric-tile"><span>AI 추천 후보</span><strong id="metric-candidates">8종목</strong><small>3건 승인 대기</small></article>
+                <article class="metric-tile"><span>위험 한도 사용률</span><strong>41%</strong><small class="warn-text">일일 손실 한도 18%</small></article>
+                <article class="metric-tile"><span>Paper 성과</span><strong>+7.8%</strong><small>최근 60거래일</small></article>
+            </section>
+
+            <section class="control-grid">
+                <article class="panel command-panel">
+                    <div class="panel-title">
+                        <h2>운영 통제</h2>
+                        <p>실거래 전환, 승인 정책, 손실 방어 상태를 즉시 확인합니다.</p>
+                    </div>
+                    <div class="toggle-matrix">
+                        <div><span>Dry Run</span><button class="toggle on" type="button">ON</button></div>
+                        <div><span>Demo Trading</span><button class="toggle on" type="button">ON</button></div>
+                        <div><span>Live Trading</span><button class="toggle off" type="button">OFF</button></div>
+                        <div><span>Require Approval</span><button class="toggle on" type="button">ON</button></div>
+                    </div>
+                    <div class="limit-list">
+                        <div><span>일일 주문 한도</span><strong>1,000,000원 / 5건</strong></div>
+                        <div><span>최대 종목 비중</span><strong>30%</strong></div>
+                        <div><span>최대 노출 비중</span><strong>80%</strong></div>
+                    </div>
+                </article>
+
+                <article class="panel model-health" id="models">
+                    <div class="panel-title">
+                        <h2>모델 상태</h2>
+                        <p>실전 판단에 연결된 모델 버전과 검증 결과입니다.</p>
+                    </div>
+                    <div class="model-stack">
+                        <div class="model-row"><span>종목 랭커</span><strong>ranker_lgbm_v3</strong><em class="pass">활성</em></div>
+                        <div class="model-row"><span>비중 최적화</span><strong>allocator_v2</strong><em class="pass">활성</em></div>
+                        <div class="model-row"><span>RL 정책</span><strong>ppo_policy_v1</strong><em class="watch">참고</em></div>
+                    </div>
+                    <div class="model-metrics">
+                        <div><span>Walk-forward Sharpe</span><strong>1.21</strong></div>
+                        <div><span>Top-5 20D Hit Rate</span><strong>58.4%</strong></div>
+                        <div><span>최종 학습</span><strong>2026-04-27</strong></div>
+                    </div>
+                </article>
+            </section>
+
+            <section class="wide-grid" id="decisions">
+                <article class="panel decision-panel">
+                    <div class="panel-title split">
+                        <div>
+                            <h2>AI 주문 후보</h2>
+                            <p>Rule, Ranker, Optimizer, Risk Engine이 합의한 후보입니다.</p>
+                        </div>
+                        <button class="secondary-button" type="button" data-icon="filter">필터</button>
+                    </div>
+                    <div class="decision-table" id="decision-table"></div>
+                </article>
+
+                <article class="panel explain-panel">
+                    <div class="panel-title">
+                        <h2>선택 후보 근거</h2>
+                        <p>모델 판단과 리스크 검사 결과를 함께 봅니다.</p>
+                    </div>
+                    <div class="explain-card" id="explain-card"></div>
+                </article>
+            </section>
+
+            <section class="wide-grid risk-section" id="risk">
+                <article class="panel risk-board">
+                    <div class="panel-title split">
+                        <div>
+                            <h2>리스크 엔진</h2>
+                            <p>주문 전 검증 항목과 한도 사용률입니다.</p>
+                        </div>
+                        <span class="state-pill ok">전체 통과</span>
+                    </div>
+                    <div class="risk-checks" id="risk-checks"></div>
+                </article>
+
+                <article class="panel chart-panel">
+                    <div class="panel-title">
+                        <h2>성과와 낙폭</h2>
+                        <p>실거래 전 paper/demo 결과를 기준으로 추적합니다.</p>
+                    </div>
+                    <div class="chart-frame"><canvas id="performance-chart"></canvas></div>
+                </article>
+            </section>
+
+            <section class="bottom-grid" id="execution">
+                <article class="panel route-panel">
+                    <div class="panel-title">
+                        <h2>주문 라우터</h2>
+                        <p>분석, 승인, 모의, 실거래 경로를 단일 흐름으로 관리합니다.</p>
+                    </div>
+                    <div class="route-flow">
+                        <div class="route-step done">Signal</div>
+                        <div class="route-step done">AI Score</div>
+                        <div class="route-step done">Risk</div>
+                        <div class="route-step active">Approval</div>
+                        <div class="route-step muted">Execution</div>
+                    </div>
+                    <div class="approval-list" id="approval-list"></div>
+                </article>
+
+                <article class="panel audit-panel" id="audit">
+                    <div class="panel-title">
+                        <h2>감사 로그</h2>
+                        <p>판단과 주문 결과를 재현하기 위한 핵심 이벤트입니다.</p>
+                    </div>
+                    <ol class="audit-list" id="audit-list"></ol>
+                </article>
+            </section>
+        </main>
+    </div>
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/static/js/ai_dashboard.js?v=1"></script>
+</body>
+</html>

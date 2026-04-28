@@ -1,6 +1,8 @@
 import sqlite3
 import os
 import json
+import psycopg2
+from psycopg2.extras import DictCursor
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from src.config import config
@@ -8,12 +10,56 @@ from src.utils.logger import logger
 
 KST = timezone(timedelta(hours=9))
 
-def connect_db() -> sqlite3.Connection:
-    db_path = Path(config.trade_db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=MEMORY")
-    return conn
+class DBWrapper:
+    def __init__(self, conn, is_pg=False):
+        self.conn = conn
+        self.is_pg = is_pg
+
+    def __enter__(self):
+        self.conn.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.conn.__exit__(exc_type, exc_val, exc_tb)
+
+    def execute(self, sql, params=()):
+        if self.is_pg:
+            sql = sql.replace("?", "%s")
+            if "AUTOINCREMENT" in sql:
+                sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+            
+            cursor = self.conn.cursor(cursor_factory=DictCursor)
+        else:
+            cursor = self.conn.cursor()
+            
+        cursor.execute(sql, params)
+        return cursor
+        
+    def commit(self):
+        self.conn.commit()
+        
+    @property
+    def row_factory(self):
+        if self.is_pg:
+            return None
+        return self.conn.row_factory
+        
+    @row_factory.setter
+    def row_factory(self, factory):
+        if not self.is_pg:
+            self.conn.row_factory = factory
+
+def connect_db():
+    db_url = os.environ.get("DATABASE_URL")
+    if db_url and db_url.startswith("postgres"):
+        conn = psycopg2.connect(db_url)
+        return DBWrapper(conn, is_pg=True)
+    else:
+        db_path = Path(config.trade_db_path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA journal_mode=MEMORY")
+        return DBWrapper(conn, is_pg=False)
 
 def init_db() -> None:
     with connect_db() as conn:
