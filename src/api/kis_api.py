@@ -10,6 +10,7 @@ from src.notifier.slack import slack_error
 
 HTTP = requests.Session()
 HTTP.trust_env = False
+HTTP.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"})
 
 class KIStockAPI:
     TOKEN_CACHE = Path("data") / "kis_token.json"
@@ -42,8 +43,10 @@ class KIStockAPI:
         url = f"{self.base_url}/oauth2/tokenP"
         body = {"grant_type": "client_credentials", "appkey": config.kistock_app_key, "appsecret": config.kistock_app_secret}
         try:
-            r = HTTP.post(url, json=body, timeout=15)
-            r.raise_for_status()
+            r = HTTP.post(url, json=body, timeout=10)
+            if r.status_code != 200:
+                logger.error(f"Token fetch HTTP {r.status_code}: {r.text}")
+                r.raise_for_status()
             data = r.json()
             token = data.get("access_token", "")
             expires_at = datetime.now() + timedelta(hours=23)
