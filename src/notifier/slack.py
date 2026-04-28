@@ -70,7 +70,7 @@ def slack_candidates(candidates: list[dict]) -> None:
     if not candidates:
         return
     lines = [
-        f"*{c['ticker']}* {c['current_price']:,.0f} 원 | 점수 {c['score']} | {', '.join(c['reasons'])}"
+        f"*{c.get('name', c['ticker'])}* (`{c['ticker']}`) {c['current_price']:,.0f} 원 | 점수 {c['score']:.1f} | {', '.join(c['reasons'])}"
         for c in candidates
     ]
     send_slack(
