@@ -46,9 +46,20 @@ def check_secrets():
     pass
 
 def run() -> None:
+    now = datetime.now(KST)
+    is_weekday = now.weekday() < 5
+    market_open = now.replace(hour=8, minute=50, second=0, microsecond=0)
+    market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    
     logger.info("=" * 60)
     logger.info(f"Seven Split started | DRY_RUN={DRY_RUN} | ENABLE_LIVE_TRADING={ENABLE_LIVE_TRADING} | ENV={TRADING_ENV}")
     logger.info(f"Order submission enabled: {ORDER_SUBMISSION_ENABLED} | Real orders enabled: {REAL_ORDERS_ENABLED}")
+    
+    if not (is_weekday and market_open <= now <= market_close):
+        logger.info(f"장이 열리지 않은 시간입니다. (현재시간: {now.strftime('%Y-%m-%d %H:%M:%S')}) 자동매매 스케줄을 건너뜁니다.")
+        logger.info("=" * 60)
+        return
+        
     logger.info("=" * 60)
 
     init_db()
