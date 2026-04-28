@@ -1,4 +1,4 @@
-name: Seven Split Auto Trading
+name: 세븐 스플릿 자동 매매 (Seven Split Auto Trading)
 
 on:
   schedule:
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Block real orders'
+        description: '실제 주문 차단 (테스트 모드)'
         required: false
         default: 'true'
         type: choice
@@ -17,7 +17,7 @@ on:
           - 'true'
           - 'false'
       mode:
-        description: 'Run mode'
+        description: '실행 모드'
         required: false
         default: 'auto'
         type: choice
@@ -31,12 +31,12 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout
+      - name: 코드 체크아웃
         uses: actions/checkout@v4
         env:
           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-      - name: Set up Python
+      - name: 파이썬 환경 설정
         uses: actions/setup-python@v5
         env:
           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -44,13 +44,13 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
-      - name: Install dependencies
+      - name: 의존성 패키지 설치
         run: pip install -r requirements.txt
 
-      - name: Create runtime directories
+      - name: 런타임 디렉토리 생성
         run: mkdir -p logs data
 
-      - name: Run trader
+      - name: 자동 매매 봇 실행
         env:
           KISTOCK_APP_KEY: ${{ secrets.KISTOCK_APP_KEY }}
           KISTOCK_APP_SECRET: ${{ secrets.KISTOCK_APP_SECRET }}
@@ -72,7 +72,7 @@ jobs:
           LOG_FILE: logs/trade-${{ github.run_number }}.log
         run: python src/trader.py 2>&1 | tee "$LOG_FILE"
 
-      - name: Upload run artifacts
+      - name: 실행 로그 및 데이터 백업 (Artifacts)
         if: always()
         uses: actions/upload-artifact@v4
         env:
