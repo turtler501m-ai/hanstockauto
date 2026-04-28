@@ -60,7 +60,7 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
           ENABLE_LIVE_TRADING: ${{ vars.ENABLE_LIVE_TRADING || 'false' }}
-          TRADING_ENV: ${{ vars.TRADING_ENV || 'demo' }}
+          TRADING_ENV: ${{ vars.TRADING_ENV || 'real' }}
           SPLIT_N: ${{ vars.SPLIT_N || '7' }}
           STOP_LOSS_PCT: ${{ vars.STOP_LOSS_PCT || '-15' }}
           TAKE_PROFIT: ${{ vars.TAKE_PROFIT || '30' }}
