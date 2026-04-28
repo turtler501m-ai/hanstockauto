@@ -70,7 +70,7 @@ jobs:
           CASH_BUFFER: ${{ vars.CASH_BUFFER || '0.20' }}
           MAX_DAILY_LOSS_PCT: ${{ vars.MAX_DAILY_LOSS_PCT || '3.0' }}
           LOG_FILE: logs/trade-${{ github.run_number }}.log
-        run: python src/trader.py 2>&1 | tee "$LOG_FILE"
+        run: python -m src.trader 2>&1 | tee "$LOG_FILE"
 
       - name: 실행 로그 및 데이터 백업 (Artifacts)
         if: always()
