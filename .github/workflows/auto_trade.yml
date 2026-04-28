@@ -1,6 +1,8 @@
 name: 세븐 스플릿 자동 매매 (Seven Split Auto Trading)
 
 on:
+  push:
+    branches: [ main ]
   schedule:
     - cron: '50 23 * * 0-4'
     - cron: '0 1 * * 1-5'
