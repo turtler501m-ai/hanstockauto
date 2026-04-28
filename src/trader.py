@@ -133,8 +133,9 @@ def run() -> None:
                 logger.info(f"Order {'OK' if ok else 'FAILED'}: {result.get('msg1', '')}")
                 save_trade(sym, sym, "buy", qty, price, reason, ok, ORDER_SUBMISSION_ENABLED)
                 indicators = {"rsi": "-", "sma20": 0, "sma60": 0, "rt": 0}
-                results.append({"name": sym, "symbol": sym, "action": "buy", "qty": qty, "price": price, "reason": reason, "ok": ok, "indicators": indicators})
-                slack_order(sym, sym, "buy", qty, price, reason, ok, indicators)
+                name = next((c.get("name", sym) for c in candidates if c["ticker"] == sym), sym)
+                results.append({"name": name, "symbol": sym, "action": "buy", "qty": qty, "price": price, "reason": reason, "ok": ok, "indicators": indicators})
+                slack_order(name, sym, "buy", qty, price, reason, ok, indicators)
                 if ok:
                     cash -= qty * price
         else:
