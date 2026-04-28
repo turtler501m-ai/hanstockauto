@@ -387,6 +387,19 @@ async function renderRuntime() {
     document.getElementById('runtime-circuit').innerHTML = circuit.opened
         ? pill(`차단 ${circuit.retry_after_seconds || 0}초`, 'sell')
         : pill(`정상 ${circuit.error_count || 0}/${circuit.max_errors || 5}`, 'buy');
+        
+    const btnSyncTrades = document.getElementById('btn-sync-trades');
+    if (btnSyncTrades) {
+        if (health.dry_run) {
+            btnSyncTrades.disabled = true;
+            btnSyncTrades.textContent = '동기화 불가 (모의 실행)';
+            btnSyncTrades.title = '모의 실행(DRY_RUN) 중에는 증권사 실계좌와 동기화할 수 없습니다.';
+        } else {
+            btnSyncTrades.disabled = false;
+            btnSyncTrades.textContent = '증권사 기록 동기화';
+            btnSyncTrades.title = '';
+        }
+    }
 }
 
 async function resetCircuitBreaker() {
@@ -890,6 +903,73 @@ async function renderTrades() {
             const pnlEl = document.getElementById('perf-realized-pnl');
             pnlEl.textContent = formatCurrency(perf.realized_pnl);
             pnlEl.className = perf.realized_pnl > 0 ? 'text-success' : (perf.realized_pnl < 0 ? 'text-danger' : '');
+            
+            const evalPnlEl = document.getElementById('perf-eval-pnl');
+            if (evalPnlEl) {
+                const evalPnl = perf.total_eval_pnl || 0;
+                evalPnlEl.textContent = formatCurrency(evalPnl);
+                evalPnlEl.className = evalPnl > 0 ? 'text-success' : (evalPnl < 0 ? 'text-danger' : '');
+            }
+            
+            const tbodyEval = document.querySelector('#table-eval-details tbody');
+            if (tbodyEval) {
+                tbodyEval.innerHTML = '';
+                const details = perf.eval_details || [];
+                if (!details.length) {
+                    setTableMessage('#table-eval-details tbody', 6, '자동매매로 매수한 보유종목이 없습니다.');
+                } else {
+                    details.forEach((item) => {
+                        const tr = document.createElement('tr');
+                        const pnlClass = item.eval_pnl > 0 ? 'text-success' : (item.eval_pnl < 0 ? 'text-danger' : '');
+                        tr.innerHTML = `
+                            <td>
+                                <span class="symbol-name">${escapeHtml(item.name || item.symbol)}</span>
+                                ${item.diff_reason ? `<div style="font-size: 0.75rem; color: #ffc107; margin-top: 2px;">⚠️ ${escapeHtml(item.diff_reason)}</div>` : ''}
+                            </td>
+                            <td>${Number(item.qty || 0).toLocaleString()}</td>
+                            <td>${formatCurrency(item.avg_cost)}</td>
+                            <td>${formatCurrency(item.current_price)}</td>
+                            <td class="${pnlClass}">${item.return_rate > 0 ? '+' : ''}${item.return_rate.toFixed(2)}%</td>
+                            <td class="${pnlClass}">${item.eval_pnl > 0 ? '+' : ''}${formatCurrency(item.eval_pnl)}</td>
+                        `;
+                        tbodyEval.appendChild(tr);
+                    });
+                }
+            }
+
+            const diffContainer = document.getElementById('pnl-diff-container');
+            const diffList = document.getElementById('pnl-diff-list');
+            const brokerPnlSpan = document.getElementById('perf-broker-pnl');
+            
+            if (diffContainer && diffList && brokerPnlSpan && typeof perf.total_broker_pnl !== 'undefined') {
+                const autoPnl = perf.total_eval_pnl || 0;
+                const brokerPnl = perf.total_broker_pnl || 0;
+                
+                if (autoPnl !== brokerPnl) {
+                    diffContainer.hidden = false;
+                    brokerPnlSpan.textContent = formatCurrency(brokerPnl);
+                    
+                    let diffHtml = '';
+                    const details = perf.eval_details || [];
+                    details.forEach(item => {
+                        if (item.diff_reason) {
+                            const diffAmt = (item.broker_pnl || 0) - (item.eval_pnl || 0);
+                            const sign = diffAmt > 0 ? '+' : '';
+                            diffHtml += `<li><strong>${escapeHtml(item.name)}</strong>: ${escapeHtml(item.diff_reason)} (평가손익 차액: ${sign}${formatCurrency(diffAmt)})</li>`;
+                        }
+                    });
+                    
+                    const untracked = perf.untracked_details || [];
+                    untracked.forEach(item => {
+                        const sign = item.broker_pnl > 0 ? '+' : '';
+                        diffHtml += `<li><strong>${escapeHtml(item.name)}</strong>: ${escapeHtml(item.diff_reason)} (증권사 평가손익 전체 합산: ${sign}${formatCurrency(item.broker_pnl)})</li>`;
+                    });
+                    
+                    diffList.innerHTML = diffHtml || '<li>차이 원인을 분석할 수 없는 오차가 있습니다. (API 지연 등)</li>';
+                } else {
+                    diffContainer.hidden = true;
+                }
+            }
         } catch (e) {
             console.error('Failed to fetch performance summary', e);
         }
@@ -937,6 +1017,45 @@ async function fetchDashboardData() {
 document.getElementById('btn-refresh').addEventListener('click', fetchDashboardData);
 document.getElementById('btn-reset-circuit').addEventListener('click', resetCircuitBreaker);
 document.getElementById('btn-signals').addEventListener('click', renderSignals);
+
+const btnSyncTrades = document.getElementById('btn-sync-trades');
+if (btnSyncTrades) {
+    btnSyncTrades.addEventListener('click', async () => {
+        btnSyncTrades.disabled = true;
+        btnSyncTrades.textContent = '동기화 중...';
+        btnSyncTrades.style.backgroundColor = '#f59e0b'; // warning yellow
+        btnSyncTrades.style.color = 'white';
+        try {
+            const result = await postJson('/api/trades/sync', {});
+            setStatus(`증권사 기록 동기화 완료 (누락된 ${result.synced_count}건 추가됨)`, true);
+            await renderTrades();
+            
+            btnSyncTrades.textContent = result.synced_count > 0 ? `동기화 완료 (${result.synced_count}건)` : '동기화 완료 ✔️';
+            btnSyncTrades.style.backgroundColor = '#10b981'; // success green
+            btnSyncTrades.style.color = 'white';
+            
+            setTimeout(() => {
+                btnSyncTrades.disabled = false;
+                btnSyncTrades.textContent = '증권사 기록 동기화';
+                btnSyncTrades.style.backgroundColor = '';
+                btnSyncTrades.style.color = '';
+            }, 3000);
+            
+        } catch (err) {
+            setStatus(`동기화 실패: ${err.message}`);
+            btnSyncTrades.textContent = '동기화 실패';
+            btnSyncTrades.style.backgroundColor = '#ef4444'; // error red
+            btnSyncTrades.style.color = 'white';
+            
+            setTimeout(() => {
+                btnSyncTrades.disabled = false;
+                btnSyncTrades.textContent = '증권사 기록 동기화';
+                btnSyncTrades.style.backgroundColor = '';
+                btnSyncTrades.style.color = '';
+            }, 3000);
+        }
+    });
+}
 
 window.showAiModal = function(element) {
     const payloadText = element.getAttribute('data-ai-payload');

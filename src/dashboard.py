@@ -180,6 +180,17 @@ def _load_balance_cache() -> dict | None:
 
 
 def _get_balance_data(api: KIStockAPI, allow_cache: bool = True) -> dict:
+    if allow_cache:
+        cached = _load_balance_cache()
+        if cached is not None:
+            cached_at = cached.get("_cache", {}).get("cached_at", "")
+            if cached_at:
+                try:
+                    age = (trader.datetime.now(trader.KST) - trader.datetime.fromisoformat(cached_at)).total_seconds()
+                    if age < 3:
+                        return cached
+                except Exception:
+                    pass
     try:
         balance_data = api.get_balance()
     except Exception:
@@ -633,22 +644,7 @@ async def get_finrl_pipeline():
     }
 
 
-@app.get("/api/trades")
-async def get_trades(limit: int = 50):
-    if limit < 1:
-        raise HTTPException(status_code=400, detail="limit must be greater than 0")
-    limit = min(limit, 200)
 
-    trader.init_db()
-
-    try:
-        with trader.connect_db() as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,))
-            return {"trades": [dict(row) for row in cursor.fetchall()]}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Trade database query failed: {e}") from e
 
 
 @app.get("/api/approvals")
@@ -731,6 +727,7 @@ async def approve_order(approval_id: int):
             item["price"],
             item["reason"],
             ok,
+            trader.ORDER_SUBMISSION_ENABLED,
         )
     except Exception as e:
         status = "failed"
@@ -757,61 +754,212 @@ async def reject_order(approval_id: int):
     return {"id": approval_id, "status": "rejected"}
 
 
+import time
+
+_cloud_trades_cache = None
+_cloud_trades_cache_time = 0
+
 def fetch_cloud_trades():
+    global _cloud_trades_cache, _cloud_trades_cache_time
+    if _cloud_trades_cache is not None and time.time() - _cloud_trades_cache_time < 10:
+        return [dict(t) for t in _cloud_trades_cache]
+        
     try:
-        # 1. Fetch cloud database branch without pulling it into working directory
         subprocess.run(["git", "fetch", "origin", "database:database"], check=False, capture_output=True)
-        # 2. Extract trades.json content directly from git blob
         output = subprocess.check_output(["git", "show", "origin/database:trades.json"], stderr=subprocess.STDOUT).decode('utf-8')
         trades = json.loads(output)
-        return trades
+        
+        _cloud_trades_cache = trades
+        _cloud_trades_cache_time = time.time()
+        return [dict(t) for t in trades]
     except Exception as e:
-        print(f"Failed to fetch cloud trades: {e}")
-        return []
+        import traceback
+        err_msg = traceback.format_exc()
+        return [{"ts": "-", "symbol": "ERROR", "name": f"ERROR: {err_msg}", "action": "buy", "qty": 0, "price": 0, "reason": str(e), "ok": 0}]
+
+@app.post("/api/trades/sync")
+async def sync_trades():
+    if trader.DRY_RUN:
+        raise HTTPException(status_code=400, detail="모의 실행(DRY_RUN) 모드에서는 증권사 계좌 동기화를 사용할 수 없습니다.")
+    try:
+        api = _get_api()
+        balance_data = _get_balance_data(api, allow_cache=False)
+        parsed_balance = _parse_balance(balance_data)
+        current_holdings = {h['symbol']: h for h in parsed_balance['holdings']}
+        
+        # Reconstruct current holdings from DB and Cloud
+        cloud_trades = fetch_cloud_trades() or []
+        local_trades = []
+        with trader.connect_db() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM trades ORDER BY ts ASC").fetchall()
+            local_trades = [dict(row) for row in rows]
+            
+        merged_trades = {}
+        for t in cloud_trades + local_trades:
+            ts = t.get("ts") or t.get("timestamp")
+            if not ts: continue
+            key = f"{ts}_{t.get('symbol')}_{t.get('action')}"
+            merged_trades[key] = t
+            
+        trades = sorted(merged_trades.values(), key=lambda x: x.get("ts", ""))
+        
+        db_holdings = {}
+        names = {}
+        for t in trades:
+            if not t.get("ok", False): continue
+            sym = t["symbol"]
+            qty = t["qty"]
+            names[sym] = t.get("name", sym)
+            if sym not in db_holdings:
+                db_holdings[sym] = 0
+            if t["action"] == "buy":
+                db_holdings[sym] += qty
+            elif t["action"] == "sell":
+                db_holdings[sym] = max(0, db_holdings[sym] - qty)
+                
+        synced_count = 0
+        
+        # 1. Sync missing buys (broker has more)
+        for sym, ch in current_holdings.items():
+            broker_qty = ch["qty"]
+            db_qty = db_holdings.get(sym, 0)
+            diff = broker_qty - db_qty
+            
+            if diff != 0:
+                action = "buy" if diff > 0 else "sell"
+                raw_stock = ch.get("_raw", {})
+                price = int(float(raw_stock.get("pchs_avg_pric", ch["price"])))
+                
+                trader.save_trade(
+                    symbol=sym,
+                    name=ch["name"],
+                    action=action,
+                    qty=abs(diff),
+                    price=price,
+                    reason="증권사 잔고 강제 동기화 (수동/누락분 보정)",
+                    ok=True,
+                    order_submission_enabled=True
+                )
+                synced_count += 1
+                
+        # Calculate db average costs to use for selling missing items without affecting PnL
+        db_costs = {}
+        for t in trades:
+            if not t.get("ok", False): continue
+            sym = t["symbol"]
+            qty = t["qty"]
+            price = t["price"]
+            if sym not in db_costs: db_costs[sym] = {"qty": 0, "cost": 0.0}
+            if t["action"] == "buy":
+                total_qty = db_costs[sym]["qty"] + qty
+                total_cost = (db_costs[sym]["qty"] * db_costs[sym]["cost"]) + (qty * price)
+                db_costs[sym]["qty"] = total_qty
+                db_costs[sym]["cost"] = total_cost / total_qty if total_qty > 0 else 0
+            elif t["action"] == "sell":
+                db_costs[sym]["qty"] = max(0, db_costs[sym]["qty"] - qty)
+                if db_costs[sym]["qty"] <= 0: db_costs[sym]["cost"] = 0
+
+        # 2. Sync missing sells (broker has less or none)
+        for sym, db_qty in db_holdings.items():
+            if db_qty > 0 and sym not in current_holdings:
+                avg_cost = int(db_costs.get(sym, {}).get("cost", 0))
+                trader.save_trade(
+                    symbol=sym,
+                    name=names.get(sym, sym),
+                    action="sell",
+                    qty=db_qty,
+                    price=avg_cost,  # Use avg_cost to avoid distorting Realized PnL
+
+                    reason="증권사 잔고 강제 동기화 (전량매도 보정)",
+                    ok=True,
+                    order_submission_enabled=True
+                )
+                synced_count += 1
+                
+        return {"ok": True, "synced_count": synced_count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/trades")
 async def get_trades(limit: int = 50):
     try:
-        # First, try to fetch from cloud. If empty, fallback to local DB (for local manual testing)
-        trades = fetch_cloud_trades()
-        if not trades:
-            with trader.connect_db() as conn:
-                conn.row_factory = sqlite3.Row
-                rows = conn.execute("SELECT timestamp as ts, action, name, symbol, price, qty, reason, success FROM trades ORDER BY timestamp DESC LIMIT ?", (limit,)).fetchall()
-                trades = [dict(row) for row in rows]
-        else:
-            # Format cloud trades for frontend
-            for t in trades:
-                t['ts'] = t.get('timestamp')
-            trades.reverse()
-            trades = trades[:limit]
+        cloud_trades = fetch_cloud_trades() or []
+        local_trades = []
+        with trader.connect_db() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM trades ORDER BY ts ASC").fetchall()
+            local_trades = [dict(row) for row in rows]
             
-        return {"trades": trades}
+        merged_trades = {}
+        for t in cloud_trades + local_trades:
+            ts = t.get("ts") or t.get("timestamp")
+            if not ts: continue
+            key = f"{ts}_{t.get('symbol')}_{t.get('action')}"
+            merged_trades[key] = {
+                "ts": ts,
+                "symbol": t.get("symbol"),
+                "name": t.get("name", t.get("symbol")),
+                "action": t.get("action"),
+                "qty": t.get("qty", 0),
+                "price": t.get("price", 0),
+                "reason": t.get("reason", ""),
+                "ok": t.get("ok", 1),
+                "env": t.get("env", "demo"),
+                "dry_run": t.get("dry_run", 0)
+            }
+            
+        trades = sorted(merged_trades.values(), key=lambda x: x["ts"], reverse=True)
+        return {"trades": trades[:limit]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/performance")
 async def get_performance():
     try:
-        trades = fetch_cloud_trades()
-        if not trades:
-            with trader.connect_db() as conn:
-                conn.row_factory = sqlite3.Row
-                rows = conn.execute("SELECT * FROM trades ORDER BY timestamp ASC").fetchall()
-                trades = [dict(row) for row in rows]
+        cloud_trades = fetch_cloud_trades() or []
+        local_trades = []
+        with trader.connect_db() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM trades ORDER BY ts ASC").fetchall()
+            local_trades = [dict(row) for row in rows]
             
+        # Merge cloud and local trades
+        # Use a dictionary keyed by timestamp and symbol to deduplicate
+        merged_trades = {}
+        for t in cloud_trades + local_trades:
+            ts = t.get("ts") or t.get("timestamp")
+            if not ts: continue
+            key = f"{ts}_{t.get('symbol')}_{t.get('action')}"
+            merged_trades[key] = {
+                "ts": ts,
+                "symbol": t.get("symbol"),
+                "name": t.get("name", t.get("symbol")),
+                "action": t.get("action"),
+                "qty": t.get("qty", 0),
+                "price": t.get("price", 0),
+                "reason": t.get("reason", ""),
+                "ok": t.get("ok", 1),
+                "env": t.get("env", "demo"),
+                "dry_run": t.get("dry_run", 0)
+            }
+            
+        trades = sorted(merged_trades.values(), key=lambda x: x["ts"])
+        
         total_trades = len(trades)
-        success_count = sum(1 for t in trades if t.get("success", False))
+        success_count = sum(1 for t in trades if t.get("ok", False))
         success_rate = (success_count / total_trades * 100) if total_trades > 0 else 0
         
         holdings = {}
         realized_pnl = 0
+        names = {}
         
         for t in trades:
-            if not t.get("success", False): continue
+            if not t.get("ok", False): continue
             sym = t["symbol"]
             qty = t["qty"]
             price = t["price"]
+            names[sym] = t.get("name", sym)
             
             if sym not in holdings:
                 holdings[sym] = {"qty": 0, "cost": 0.0}
@@ -830,10 +978,91 @@ async def get_performance():
                     holdings[sym]["qty"] = 0
                     holdings[sym]["cost"] = 0
                     
+        # Fetch current prices to calculate evaluation PnL
+        current_holdings = {}
+        total_broker_pnl = 0
+        try:
+            api = _get_api()
+            balance_data = _get_balance_data(api)
+            parsed_balance = _parse_balance(balance_data)
+            current_holdings = {h['symbol']: h for h in parsed_balance['holdings']}
+            total_broker_pnl = parsed_balance.get("pnl", 0)
+        except Exception:
+            pass
+
+        # 사용자 요청: 불일치가 발생하면 증권사 정보로 맞춰서 보정
+        # 자동매매 기록(trades.json)으로 추적한 보유량 대신, 증권사 실제 잔고를 강제로 덮어씌움 (단, DRY_RUN일 때는 DB 우선)
+        eval_details = []
+        total_eval_pnl = total_broker_pnl
+        
+        if trader.DRY_RUN:
+            total_eval_pnl = 0
+            for sym, data in holdings.items():
+                if data["qty"] > 0:
+                    current_price = data["cost"]
+                    if sym in current_holdings:
+                        current_price = current_holdings[sym]["price"]
+                    else:
+                        try:
+                            q = api.get_quote(sym)
+                            current_price = q["current"]
+                        except Exception:
+                            pass
+                    
+                    eval_pnl = (current_price - data["cost"]) * data["qty"]
+                    return_rate = ((current_price / data["cost"]) - 1) * 100 if data["cost"] > 0 else 0
+                    total_eval_pnl += eval_pnl
+                    
+                    eval_details.append({
+                        "symbol": sym,
+                        "name": names.get(sym, sym),
+                        "qty": data["qty"],
+                        "avg_cost": data["cost"],
+                        "current_price": current_price,
+                        "eval_pnl": int(eval_pnl),
+                        "return_rate": round(return_rate, 2),
+                        "broker_qty": current_holdings.get(sym, {}).get("qty", 0),
+                        "broker_pnl": int(current_holdings.get(sym, {}).get("pnl", 0)),
+                        "diff_reason": "모의 실행(DRY_RUN) 중"
+                    })
+        else:
+            for sym, ch in current_holdings.items():
+                raw_stock = ch.get("_raw", {})
+                avg_cost = float(raw_stock.get("pchs_avg_pric", 0)) if raw_stock.get("pchs_avg_pric") else 0
+                
+                if avg_cost == 0 and ch["qty"] > 0:
+                    avg_cost = ch["price"] - (ch["pnl"] / ch["qty"])
+                    
+                recorded_qty = holdings.get(sym, {}).get("qty", 0)
+                diff_reason = ""
+                if recorded_qty == 0:
+                    diff_reason = "수동매수/기록누락 보정 완료"
+                elif recorded_qty != ch["qty"]:
+                    diff_reason = f"수량 불일치({recorded_qty}주->{ch['qty']}주) 보정 완료"
+                    
+                eval_details.append({
+                    "symbol": sym,
+                    "name": ch["name"],
+                    "qty": ch["qty"],
+                    "avg_cost": avg_cost,
+                    "current_price": ch["price"],
+                    "eval_pnl": int(ch["pnl"]),
+                    "return_rate": round(ch["rt"], 2),
+                    "broker_qty": ch["qty"],
+                    "broker_pnl": int(ch["pnl"]),
+                    "diff_reason": diff_reason
+                })
+
+        untracked_details = [] # 더 이상 사용하지 않음 (모두 eval_details로 흡수)
+                    
         return {
             "total_trades": total_trades,
             "success_rate": round(success_rate, 2),
-            "realized_pnl": int(realized_pnl)
+            "realized_pnl": int(realized_pnl),
+            "total_eval_pnl": int(total_eval_pnl),
+            "total_broker_pnl": int(total_broker_pnl),
+            "eval_details": eval_details,
+            "untracked_details": untracked_details
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

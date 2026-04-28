@@ -138,3 +138,34 @@ class KIStockAPI:
         r = HTTP.post(url, headers=self._headers(tr_id), json=body, timeout=15)
         r.raise_for_status()
         return r.json()
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    def get_trade_history(self, start_date: str, end_date: str) -> list:
+        tr_id = "VTTC8001R" if config.trading_env == "demo" else "TTTC8001R"
+        url = f"{self.base_url}/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
+        cano = config.kistock_account[:8]
+        acnt = config.kistock_account[8:] if len(config.kistock_account) > 8 else "01"
+        params = {
+            "CANO": cano,
+            "ACNT_PRDT_CD": acnt,
+            "INQR_STRT_DT": start_date,
+            "INQR_END_DT": end_date,
+            "SLL_BUY_DVSN_CD": "00",
+            "INQR_DVSN": "00",
+            "PDNO": "",
+            "CCLD_DVSN": "01",  # 01: 체결
+            "ORD_GNO_BRNO": "",
+            "ODNO": "",
+            "INQR_DVSN_3": "00",
+            "INQR_DVSN_1": "",
+            "CTX_AREA_FK100": "",
+            "CTX_AREA_NK100": ""
+        }
+        r = HTTP.get(url, headers=self._headers(tr_id), params=params, timeout=15)
+        if r.status_code != 200:
+            logger.error(f"HTTP Error {r.status_code}: {r.text}")
+        r.raise_for_status()
+        data = r.json()
+        if data.get("rt_cd") != "0":
+            raise Exception(data.get("msg1", "unknown KIS trade history error"))
+        return data.get("output1", [])
