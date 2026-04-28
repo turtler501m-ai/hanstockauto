@@ -10,7 +10,6 @@ from src.notifier.slack import slack_error
 
 HTTP = requests.Session()
 HTTP.trust_env = False
-HTTP.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"})
 
 class KIStockAPI:
     TOKEN_CACHE = Path("data") / "kis_token.json"
@@ -26,6 +25,10 @@ class KIStockAPI:
     def __init__(self, notify_errors: bool = True) -> None:
         self.notify_errors = notify_errors
         self.base_url = "https://openapi.koreainvestment.com:9443" if config.trading_env == "real" else "https://openapivts.koreainvestment.com:29443"
+        if config.trading_env == "real":
+            HTTP.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"})
+        else:
+            HTTP.headers.update({"User-Agent": "python-requests/2.31.0"})
         self.access_token = self._load_or_fetch_token()
 
     def _load_or_fetch_token(self) -> str:
