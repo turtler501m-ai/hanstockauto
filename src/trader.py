@@ -153,6 +153,11 @@ if __name__ == "__main__":
     try:
         run()
     except Exception as e:
-        logger.error(f"Critical error in trader: {e}")
-        slack_error(f"실행 중 치명적인 오류가 발생했습니다: {e}")
+        logger.exception("Critical error in trader:")
+        # Tenacity의 RetryError인 경우 원본 에러 메시지를 추출
+        if hasattr(e, "last_attempt") and e.last_attempt.exception():
+            original_err = e.last_attempt.exception()
+            slack_error(f"실행 중 치명적인 오류가 발생했습니다: {original_err}")
+        else:
+            slack_error(f"실행 중 치명적인 오류가 발생했습니다: {e}")
         raise

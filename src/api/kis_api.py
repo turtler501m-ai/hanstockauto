@@ -83,6 +83,8 @@ class KIStockAPI:
         acnt = config.kistock_account[8:] if len(config.kistock_account) > 8 else "01"
         params = {"CANO": cano, "ACNT_PRDT_CD": acnt, "AFHR_FLPR_YN": "N", "OFL_YN": "", "INQR_DVSN": "02", "UNPR_DVSN": "01", "FUND_STTL_ICLD_YN": "N", "FNCG_AMT_AUTO_RDPT_YN": "N", "PRCS_DVSN": "01", "CTX_AREA_FK100": "", "CTX_AREA_NK100": ""}
         r = HTTP.get(url, headers=self._headers(tr_id), params=params, timeout=15)
+        if r.status_code != 200:
+            logger.error(f"HTTP Error {r.status_code}: {r.text}")
         r.raise_for_status()
         data = r.json()
         if data.get("rt_cd") != "0":
