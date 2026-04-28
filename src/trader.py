@@ -150,4 +150,9 @@ def run() -> None:
     logger.info("Seven Split finished")
 
 if __name__ == "__main__":
-    run()
+    try:
+        run()
+    except Exception as e:
+        logger.error(f"Critical error in trader: {e}")
+        slack_error(f"실행 중 치명적인 오류가 발생했습니다: {e}")
+        raise
