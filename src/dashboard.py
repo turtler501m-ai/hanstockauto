@@ -754,3 +754,62 @@ async def reject_order(approval_id: int):
             (now, approval_id),
         )
     return {"id": approval_id, "status": "rejected"}
+
+
+@app.get("/api/trades")
+async def get_trades(limit: int = 50):
+    try:
+        with trader.connect_db() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT timestamp as ts, action, name, symbol, price, qty, reason, success FROM trades ORDER BY timestamp DESC LIMIT ?", (limit,)).fetchall()
+            trades = [dict(row) for row in rows]
+        return {"trades": trades}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/performance")
+async def get_performance():
+    try:
+        with trader.connect_db() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM trades ORDER BY timestamp ASC").fetchall()
+            trades = [dict(row) for row in rows]
+            
+        total_trades = len(trades)
+        success_count = sum(1 for t in trades if t["success"])
+        success_rate = (success_count / total_trades * 100) if total_trades > 0 else 0
+        
+        holdings = {}
+        realized_pnl = 0
+        
+        for t in trades:
+            if not t["success"]: continue
+            sym = t["symbol"]
+            qty = t["qty"]
+            price = t["price"]
+            
+            if sym not in holdings:
+                holdings[sym] = {"qty": 0, "cost": 0.0}
+                
+            if t["action"] == "buy":
+                total_qty = holdings[sym]["qty"] + qty
+                total_cost = (holdings[sym]["qty"] * holdings[sym]["cost"]) + (qty * price)
+                holdings[sym]["qty"] = total_qty
+                holdings[sym]["cost"] = total_cost / total_qty if total_qty > 0 else 0
+            elif t["action"] == "sell":
+                sell_qty = min(qty, holdings[sym]["qty"])
+                profit = (price - holdings[sym]["cost"]) * sell_qty
+                realized_pnl += profit
+                holdings[sym]["qty"] -= sell_qty
+                if holdings[sym]["qty"] <= 0:
+                    holdings[sym]["qty"] = 0
+                    holdings[sym]["cost"] = 0
+                    
+        return {
+            "total_trades": total_trades,
+            "success_rate": round(success_rate, 2),
+            "realized_pnl": int(realized_pnl)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

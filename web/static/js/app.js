@@ -881,6 +881,19 @@ async function handleApprovalAction(button, action) {
 
 async function renderTrades() {
     try {
+        // 성과 요약 (Performance)
+        try {
+            const perf = await fetchJson('/api/performance');
+            document.getElementById('perf-total-trades').textContent = `${perf.total_trades}회`;
+            document.getElementById('perf-success-rate').textContent = `${perf.success_rate}%`;
+            
+            const pnlEl = document.getElementById('perf-realized-pnl');
+            pnlEl.textContent = formatCurrency(perf.realized_pnl);
+            pnlEl.className = perf.realized_pnl > 0 ? 'text-success' : (perf.realized_pnl < 0 ? 'text-danger' : '');
+        } catch (e) {
+            console.error('Failed to fetch performance summary', e);
+        }
+
         const trades = await fetchJson('/api/trades?limit=20');
         const tbodyTrades = document.querySelector('#table-trades tbody');
         tbodyTrades.innerHTML = '';
