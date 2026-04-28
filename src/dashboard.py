@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+import subprocess
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -756,35 +757,58 @@ async def reject_order(approval_id: int):
     return {"id": approval_id, "status": "rejected"}
 
 
+def fetch_cloud_trades():
+    try:
+        # 1. Fetch cloud database branch without pulling it into working directory
+        subprocess.run(["git", "fetch", "origin", "database:database"], check=False, capture_output=True)
+        # 2. Extract trades.json content directly from git blob
+        output = subprocess.check_output(["git", "show", "origin/database:trades.json"], stderr=subprocess.STDOUT).decode('utf-8')
+        trades = json.loads(output)
+        return trades
+    except Exception as e:
+        print(f"Failed to fetch cloud trades: {e}")
+        return []
+
 @app.get("/api/trades")
 async def get_trades(limit: int = 50):
     try:
-        with trader.connect_db() as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT timestamp as ts, action, name, symbol, price, qty, reason, success FROM trades ORDER BY timestamp DESC LIMIT ?", (limit,)).fetchall()
-            trades = [dict(row) for row in rows]
+        # First, try to fetch from cloud. If empty, fallback to local DB (for local manual testing)
+        trades = fetch_cloud_trades()
+        if not trades:
+            with trader.connect_db() as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute("SELECT timestamp as ts, action, name, symbol, price, qty, reason, success FROM trades ORDER BY timestamp DESC LIMIT ?", (limit,)).fetchall()
+                trades = [dict(row) for row in rows]
+        else:
+            # Format cloud trades for frontend
+            for t in trades:
+                t['ts'] = t.get('timestamp')
+            trades.reverse()
+            trades = trades[:limit]
+            
         return {"trades": trades}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/performance")
 async def get_performance():
     try:
-        with trader.connect_db() as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT * FROM trades ORDER BY timestamp ASC").fetchall()
-            trades = [dict(row) for row in rows]
+        trades = fetch_cloud_trades()
+        if not trades:
+            with trader.connect_db() as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute("SELECT * FROM trades ORDER BY timestamp ASC").fetchall()
+                trades = [dict(row) for row in rows]
             
         total_trades = len(trades)
-        success_count = sum(1 for t in trades if t["success"])
+        success_count = sum(1 for t in trades if t.get("success", False))
         success_rate = (success_count / total_trades * 100) if total_trades > 0 else 0
         
         holdings = {}
         realized_pnl = 0
         
         for t in trades:
-            if not t["success"]: continue
+            if not t.get("success", False): continue
             sym = t["symbol"]
             qty = t["qty"]
             price = t["price"]

@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import json
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from src.config import config
@@ -45,5 +46,17 @@ def save_trade(symbol: str, name: str, action: str, qty: int, price: int, reason
                 """,
                 (ts, symbol, name, action, qty, price, reason, int(ok), config.trading_env, int(not order_submission_enabled)),
             )
+            
+            # Export to JSON for cloud sync
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT ts, symbol, name, action, qty, price, reason, ok, env, dry_run FROM trades ORDER BY ts ASC").fetchall()
+            trades = [dict(row) for row in rows]
+            
+        # Use data/trades.json for GitHub Actions
+        data_json_path = Path("data/trades.json")
+        data_json_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(data_json_path, "w", encoding="utf-8") as f:
+            json.dump(trades, f, ensure_ascii=False, indent=2)
+            
     except Exception as e:
         logger.warning(f"Failed to save trade history: {e}")
