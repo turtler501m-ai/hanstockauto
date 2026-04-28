@@ -719,6 +719,8 @@ async def approve_order(approval_id: int):
         ok = result.get("rt_cd") == "0"
         status = "executed" if ok else "failed"
         response_msg = result.get("msg1", "")
+        if ok and not trader.DRY_RUN:
+            response_msg = f"{response_msg} (주문접수 완료 - 실제 체결 여부는 HTS/MTS에서 확인 요망)"
         trader.save_trade(
             item["symbol"],
             item["name"],

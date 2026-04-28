@@ -531,7 +531,6 @@ async function renderBalance() {
 
 async function renderOptimizer() {
     setButtonBusy('btn-optimizer', true);
-    setButtonBusy('btn-top-optimizer', true);
     setTableMessage('#table-optimizer tbody', 7, '포트폴리오 최적 비중을 계산하고 있습니다...');
     try {
         const data = await fetchJson('/api/portfolio-optimizer');
@@ -576,7 +575,6 @@ async function renderOptimizer() {
         setTableMessage('#table-optimizer tbody', 7, err.message);
     } finally {
         setButtonBusy('btn-optimizer', false);
-        setButtonBusy('btn-top-optimizer', false);
     }
 }
 
@@ -1013,8 +1011,6 @@ async function renderTrades() {
 async function fetchDashboardData() {
     await Promise.all([renderRuntime(), renderConfig(), renderBalance(), renderTrades(), renderApprovals()]);
 }
-
-document.getElementById('btn-refresh').addEventListener('click', fetchDashboardData);
 document.getElementById('btn-reset-circuit').addEventListener('click', resetCircuitBreaker);
 document.getElementById('btn-signals').addEventListener('click', renderSignals);
 
@@ -1122,11 +1118,6 @@ document.getElementById('btn-candidates').addEventListener('click', renderCandid
 document.getElementById('btn-approvals').addEventListener('click', renderApprovals);
 document.getElementById('btn-ai-allocation').addEventListener('click', renderAiAllocation);
 document.getElementById('btn-optimizer').addEventListener('click', renderOptimizer);
-document.getElementById('btn-top-signals').addEventListener('click', renderSignals);
-document.getElementById('btn-top-candidates').addEventListener('click', renderCandidates);
-document.getElementById('btn-top-ai').addEventListener('click', renderAiAllocation);
-document.getElementById('btn-top-optimizer').addEventListener('click', renderOptimizer);
-
 setTableMessage('#table-signals tbody', 7, '진단하기를 누르면 보유 종목 신호를 확인합니다');
 setTableMessage('#table-candidates tbody', 8, '찾기를 누르면 관심종목에서 매수 후보를 검색합니다');
 setTableMessage('#table-approvals tbody', 7, '승인 대기 주문이 없습니다');
