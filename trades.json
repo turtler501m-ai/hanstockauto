@@ -1,1 +1,38 @@
-[]
+[
+  {
+    "ts": "2026-04-28 13:57:51",
+    "symbol": "005490",
+    "name": "POSCO홀딩스",
+    "action": "buy",
+    "qty": 1,
+    "price": 464000,
+    "reason": "golden cross SMA20=380450>SMA60=365850",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 1
+  },
+  {
+    "ts": "2026-04-28 13:57:52",
+    "symbol": "066570",
+    "name": "LG전자",
+    "action": "buy",
+    "qty": 2,
+    "price": 140900,
+    "reason": "golden cross SMA20=120915>SMA60=117210",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 1
+  },
+  {
+    "ts": "2026-04-28 13:57:59",
+    "symbol": "003490",
+    "name": "003490",
+    "action": "buy",
+    "qty": 98,
+    "price": 24350,
+    "reason": "new buy score=4 (RSI pullback 45, trend pullback RSI2=0, SMA20>SMA60)",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 1
+  }
+]
