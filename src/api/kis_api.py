@@ -16,7 +16,7 @@ HTTP.trust_env = False
 # KIS API 전역 스로틀: 초당 최대 1회 요청 강제 (EGW00201 방지)
 _KIS_THROTTLE_LOCK = threading.Lock()
 _KIS_LAST_CALL: float = 0.0
-_KIS_MIN_INTERVAL: float = 1.5  # 초 단위
+_KIS_MIN_INTERVAL: float = 2.0  # 초 단위 (EGW00201 방지)
 
 
 def _kis_throttle() -> None:
@@ -69,6 +69,7 @@ class KIStockAPI:
         return self._fetch_token()
 
     def _fetch_token(self) -> str:
+        _kis_throttle()
         url = f"{self.base_url}/oauth2/tokenP"
         body = {"grant_type": "client_credentials", "appkey": config.kistock_app_key, "appsecret": config.kistock_app_secret}
         try:
@@ -150,8 +151,8 @@ class KIStockAPI:
 
     @retry(
         retry=retry_if_not_exception_type(KISConfigError),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=3, max=15),
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=2, min=3, max=30),
         reraise=True,
     )
     def get_balance(self) -> dict:
@@ -198,6 +199,7 @@ class KIStockAPI:
     )
     def get_volume_rank(self, top_n: int = 50) -> list[str]:
         try:
+            _kis_throttle()
             url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/volume-rank"
             params = {"FID_COND_MRK_DIV_CODE": "J", "FID_COND_SCR_DIV_CODE": "20171", "FID_INPUT_ISCD": "0000", "FID_DIV_CLS_CODE": "0", "FID_BLNG_CLS_CODE": "0", "FID_TRGT_CLS_CODE": "111111111", "FID_TRGT_EXLS_CLS_CODE": "0000000000", "FID_INPUT_PRICE_1": "", "FID_INPUT_PRICE_2": "", "FID_VOL_CNT": "", "FID_INPUT_DATE_1": ""}
             r = HTTP.get(url, headers=self._headers("FHKUP03500000"), params=params, timeout=15)
@@ -218,6 +220,7 @@ class KIStockAPI:
     )
     def get_daily(self, symbol: str, n: int = 60) -> list:
         try:
+            _kis_throttle()
             today = datetime.now().strftime("%Y%m%d")
             start = (datetime.now() - timedelta(days=365 * 3)).strftime("%Y%m%d")
             mrkt_div = "E" if symbol in self.ETF_MARKET_CODES else "J"
@@ -242,6 +245,7 @@ class KIStockAPI:
         order_submission_enabled = (not config.dry_run) and (config.trading_env == "demo" or real_orders_enabled)
         if not order_submission_enabled:
             return {"rt_cd": "0", "msg1": "DRY_RUN"}
+        _kis_throttle()
         tr_id = ("VTTC0802U" if config.trading_env == "demo" else "TTTC0802U") if order_type == "buy" else ("VTTC0801U" if config.trading_env == "demo" else "TTTC0801U")
         url = f"{self.base_url}/uapi/domestic-stock/v1/trading/order-cash"
         body = {"CANO": config.kistock_account[:8], "ACNT_PRDT_CD": config.kistock_account[8:] if len(config.kistock_account) > 8 else "01", "PDNO": symbol, "ORD_DVSN": "01" if price == 0 else "00", "ORD_QTY": str(qty), "ORD_UNPR": str(price)}
@@ -260,27 +264,28 @@ class KIStockAPI:
         wait=wait_exponential(multiplier=1, min=2, max=10),
     )
     def get_trade_history(self, start_date: str, end_date: str) -> list:
-        tr_id = "VTTC8001R" if config.trading_env == "demo" else "TTTC8001R"
-        url = f"{self.base_url}/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
-        cano = config.kistock_account[:8]
-        acnt = config.kistock_account[8:] if len(config.kistock_account) > 8 else "01"
-        params = {
-            "CANO": cano,
-            "ACNT_PRDT_CD": acnt,
-            "INQR_STRT_DT": start_date,
-            "INQR_END_DT": end_date,
-            "SLL_BUY_DVSN_CD": "00",
-            "INQR_DVSN": "00",
-            "PDNO": "",
-            "CCLD_DVSN": "01",  # 01: 체결
-            "ORD_GNO_BRNO": "",
-            "ODNO": "",
-            "INQR_DVSN_3": "00",
-            "INQR_DVSN_1": "",
-            "CTX_AREA_FK100": "",
-            "CTX_AREA_NK100": ""
-        }
         try:
+            _kis_throttle()
+            tr_id = "VTTC8001R" if config.trading_env == "demo" else "TTTC8001R"
+            url = f"{self.base_url}/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
+            cano = config.kistock_account[:8]
+            acnt = config.kistock_account[8:] if len(config.kistock_account) > 8 else "01"
+            params = {
+                "CANO": cano,
+                "ACNT_PRDT_CD": acnt,
+                "INQR_STRT_DT": start_date,
+                "INQR_END_DT": end_date,
+                "SLL_BUY_DVSN_CD": "00",
+                "INQR_DVSN": "00",
+                "PDNO": "",
+                "CCLD_DVSN": "01",
+                "ORD_GNO_BRNO": "",
+                "ODNO": "",
+                "INQR_DVSN_3": "00",
+                "INQR_DVSN_1": "",
+                "CTX_AREA_FK100": "",
+                "CTX_AREA_NK100": ""
+            }
             r = HTTP.get(url, headers=self._headers(tr_id), params=params, timeout=15)
             data = self._response_json(r, "Trade history")
             if data.get("rt_cd") != "0":
