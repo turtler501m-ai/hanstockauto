@@ -1000,7 +1000,33 @@ async def get_performance():
         total_eval_pnl = total_broker_pnl
         
         if trader.DRY_RUN:
-            pass # 기존 로직 생략
+            total_eval_pnl = 0
+            for sym, data in holdings.items():
+                if data["qty"] > 0:
+                    current_price = current_holdings.get(sym, {}).get("price", data["cost"])
+                    eval_pnl = (current_price - data["cost"]) * data["qty"]
+                    total_eval_pnl += eval_pnl
+                    eval_details.append({
+                        "symbol": sym,
+                        "name": names.get(sym, sym),
+                        "qty": data["qty"],
+                        "cost": data["cost"],
+                        "current_price": current_price,
+                        "eval_pnl": eval_pnl
+                    })
+
+        return {
+            "realized_pnl": realized_pnl,
+            "total_eval_pnl": total_eval_pnl,
+            "success_rate": success_rate,
+            "total_trades": total_trades,
+            "holdings": holdings,
+            "eval_details": eval_details
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/risk/status")
 async def get_risk_status():
