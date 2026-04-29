@@ -526,6 +526,22 @@ def find_candidates(
     }
 
 
+def adjust_tick_size(price: int) -> int:
+    if price < 2000:
+        return price
+    elif price < 5000:
+        return price - (price % 5)
+    elif price < 20000:
+        return price - (price % 10)
+    elif price < 50000:
+        return price - (price % 50)
+    elif price < 200000:
+        return price - (price % 100)
+    elif price < 500000:
+        return price - (price % 500)
+    else:
+        return price - (price % 1000)
+
 def build_orders(candidates: list[dict], get_quote_fn: Callable[[str], dict], held_count: int, cash: int) -> list[dict]:
     available_slots = config.max_positions - held_count
     if available_slots <= 0:
@@ -539,7 +555,9 @@ def build_orders(candidates: list[dict], get_quote_fn: Callable[[str], dict], he
     orders = []
     for c in candidates[:available_slots]:
         quote = get_quote_fn(c["ticker"])
-        price = int(quote["ask1"] or quote["current"])
+        raw_price = int(quote["ask1"] or quote["current"])
+        price = adjust_tick_size(raw_price)
+        
         if price <= 0:
             continue
         qty = math.floor(per_position / (price * cost_mult))
