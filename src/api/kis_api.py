@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 from datetime import datetime, timedelta
 import requests
 from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
@@ -10,6 +12,21 @@ from src.notifier.slack import slack_error
 
 HTTP = requests.Session()
 HTTP.trust_env = False
+
+# KIS API 전역 스로틀: 초당 최대 1회 요청 강제 (EGW00201 방지)
+_KIS_THROTTLE_LOCK = threading.Lock()
+_KIS_LAST_CALL: float = 0.0
+_KIS_MIN_INTERVAL: float = 1.5  # 초 단위
+
+
+def _kis_throttle() -> None:
+    """KIS API 호출 전 최소 간격을 보장합니다."""
+    global _KIS_LAST_CALL
+    with _KIS_THROTTLE_LOCK:
+        elapsed = time.monotonic() - _KIS_LAST_CALL
+        if elapsed < _KIS_MIN_INTERVAL:
+            time.sleep(_KIS_MIN_INTERVAL - elapsed)
+        _KIS_LAST_CALL = time.monotonic()
 
 
 class KISConfigError(RuntimeError):
@@ -134,11 +151,12 @@ class KIStockAPI:
     @retry(
         retry=retry_if_not_exception_type(KISConfigError),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=5, max=30),
+        wait=wait_exponential(multiplier=2, min=3, max=15),
         reraise=True,
     )
     def get_balance(self) -> dict:
         try:
+            _kis_throttle()
             tr_id = "VTTC8434R" if config.trading_env == "demo" else "TTTC8434R"
             url = f"{self.base_url}/uapi/domestic-stock/v1/trading/inquire-balance"
             cano = config.kistock_account[:8]
@@ -161,11 +179,10 @@ class KIStockAPI:
     )
     def get_quote(self, symbol: str) -> dict:
         try:
+            _kis_throttle()
             r = HTTP.get(f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-price", headers=self._headers("FHKST01010100"), params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": symbol}, timeout=10)
             data = self._response_json(r, "Quote")
             if data.get("rt_cd") != "0":
-                import time
-                time.sleep(1) # 한도 초과 시 1초 대기 후 재시도 유도
                 raise self._kis_error(data, "KIS get_quote error")
             self._success()
             output = data.get("output", {})
