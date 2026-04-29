@@ -546,7 +546,7 @@ async function renderOptimizer() {
             const kind = action === 'buy' ? 'buy' : (action === 'sell' ? 'sell' : 'hold');
             const reason = `포트폴리오 목표비중 ${formatNumber(row.target_weight * 100, 1)}%; 점수=${formatNumber(row.score, 1)}, 변동성=${formatNumber(row.volatility * 100, 1)}%`;
             const queueButton = action === 'hold'
-                ? ''
+                ? `<button type="button" class="button-ghost" disabled title="비중 유지 상태이므로 주문할 내역이 없습니다." style="opacity:0.3; cursor:not-allowed;">변경없음</button>`
                 : `<button type="button" class="button-ghost queue-order"
                     data-symbol="${escapeHtml(row.symbol)}"
                     data-name="${escapeHtml(row.name)}"
@@ -594,7 +594,7 @@ async function renderSignals() {
             const action = String(row.action || 'hold').toLowerCase();
             const kind = action === 'buy' ? 'buy' : (action === 'sell' ? 'sell' : 'hold');
             const queueButton = action === 'hold'
-                ? ''
+                ? `<button type="button" class="button-ghost" disabled title="관망 신호이므로 주문할 내역이 없습니다." style="opacity:0.3; cursor:not-allowed;">보유(관망)</button>`
                 : `<button type="button" class="button-ghost queue-order"
                     data-symbol="${escapeHtml(row.symbol)}"
                     data-name="${escapeHtml(row.name)}"
@@ -760,7 +760,7 @@ async function renderAiAllocation() {
                 reasons: Array.isArray(row.reasons) ? row.reasons : []
             }));
             const queueButton = action === 'hold'
-                ? ''
+                ? `<button type="button" class="button-ghost" disabled title="AI가 현재 비중을 유지할 것을 권장합니다." style="opacity:0.3; cursor:not-allowed;">유지</button>`
                 : `<button type="button" class="button-ghost queue-order"
                     data-symbol="${escapeHtml(row.symbol)}"
                     data-name="${escapeHtml(row.name)}"
