@@ -84,6 +84,12 @@ uvicorn src.dashboard:app --reload --host 127.0.0.1 --port 8000
 
 Open `http://127.0.0.1:8000`.
 
+Run local checks:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\verify-local.ps1
+```
+
 ## Order Guard
 
 Real orders are submitted only when all three conditions are true:

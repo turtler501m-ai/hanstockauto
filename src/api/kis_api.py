@@ -75,61 +75,106 @@ class KIStockAPI:
 
     @classmethod
     def circuit_status(cls) -> dict:
-        return {"opened": False, "error_count": 0, "max_errors": cls.MAX_ERRORS}
+        return {
+            "opened": cls._err_count >= cls.MAX_ERRORS,
+            "error_count": cls._err_count,
+            "max_errors": cls.MAX_ERRORS,
+        }
 
     @classmethod
     def reset_circuit(cls) -> None:
-        pass
+        cls._err_count = 0
+
+    @classmethod
+    def _fail(cls) -> None:
+        cls._err_count = min(cls.MAX_ERRORS, cls._err_count + 1)
+
+    @classmethod
+    def _success(cls) -> None:
+        cls._err_count = 0
+
+    def _record_result(self, data: dict) -> None:
+        if data.get("rt_cd") == "0":
+            self._success()
+        else:
+            self._fail()
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def get_balance(self) -> dict:
-        tr_id = "VTTC8434R" if config.trading_env == "demo" else "TTTC8434R"
-        url = f"{self.base_url}/uapi/domestic-stock/v1/trading/inquire-balance"
-        cano = config.kistock_account[:8]
-        acnt = config.kistock_account[8:] if len(config.kistock_account) > 8 else "01"
-        params = {"CANO": cano, "ACNT_PRDT_CD": acnt, "AFHR_FLPR_YN": "N", "OFL_YN": "", "INQR_DVSN": "02", "UNPR_DVSN": "01", "FUND_STTL_ICLD_YN": "N", "FNCG_AMT_AUTO_RDPT_YN": "N", "PRCS_DVSN": "01", "CTX_AREA_FK100": "", "CTX_AREA_NK100": ""}
-        r = HTTP.get(url, headers=self._headers(tr_id), params=params, timeout=15)
-        if r.status_code != 200:
-            logger.error(f"HTTP Error {r.status_code}: {r.text}")
-        r.raise_for_status()
-        data = r.json()
-        if data.get("rt_cd") != "0":
-            raise Exception(data.get("msg1", "unknown KIS balance error"))
-        return data
+        try:
+            tr_id = "VTTC8434R" if config.trading_env == "demo" else "TTTC8434R"
+            url = f"{self.base_url}/uapi/domestic-stock/v1/trading/inquire-balance"
+            cano = config.kistock_account[:8]
+            acnt = config.kistock_account[8:] if len(config.kistock_account) > 8 else "01"
+            params = {"CANO": cano, "ACNT_PRDT_CD": acnt, "AFHR_FLPR_YN": "N", "OFL_YN": "", "INQR_DVSN": "02", "UNPR_DVSN": "01", "FUND_STTL_ICLD_YN": "N", "FNCG_AMT_AUTO_RDPT_YN": "N", "PRCS_DVSN": "01", "CTX_AREA_FK100": "", "CTX_AREA_NK100": ""}
+            r = HTTP.get(url, headers=self._headers(tr_id), params=params, timeout=15)
+            if r.status_code != 200:
+                logger.error(f"HTTP Error {r.status_code}: {r.text}")
+            r.raise_for_status()
+            data = r.json()
+            if data.get("rt_cd") != "0":
+                raise Exception(data.get("msg1", "unknown KIS balance error"))
+            self._success()
+            return data
+        except Exception:
+            self._fail()
+            raise
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def get_quote(self, symbol: str) -> dict:
-        r = HTTP.get(f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-price", headers=self._headers("FHKST01010100"), params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": symbol}, timeout=10)
-        data = r.json()
-        if data.get("rt_cd") != "0":
-            import time
-            time.sleep(1) # 한도 초과 시 1초 대기 후 재시도 유도
-            raise Exception(data.get("msg1", "KIS get_quote error"))
-        output = data.get("output", {})
-        return {"current": float(output.get("stck_prpr", 0)), "ask1": float(output.get("askp1", 0)), "bid1": float(output.get("bidp1", 0))}
+        try:
+            r = HTTP.get(f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-price", headers=self._headers("FHKST01010100"), params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": symbol}, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            if data.get("rt_cd") != "0":
+                import time
+                time.sleep(1) # 한도 초과 시 1초 대기 후 재시도 유도
+                raise Exception(data.get("msg1", "KIS get_quote error"))
+            self._success()
+            output = data.get("output", {})
+            return {"current": float(output.get("stck_prpr", 0)), "ask1": float(output.get("askp1", 0)), "bid1": float(output.get("bidp1", 0))}
+        except Exception:
+            self._fail()
+            raise
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def get_volume_rank(self, top_n: int = 50) -> list[str]:
-        url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/volume-rank"
-        params = {"FID_COND_MRK_DIV_CODE": "J", "FID_COND_SCR_DIV_CODE": "20171", "FID_INPUT_ISCD": "0000", "FID_DIV_CLS_CODE": "0", "FID_BLNG_CLS_CODE": "0", "FID_TRGT_CLS_CODE": "111111111", "FID_TRGT_EXLS_CLS_CODE": "0000000000", "FID_INPUT_PRICE_1": "", "FID_INPUT_PRICE_2": "", "FID_VOL_CNT": "", "FID_INPUT_DATE_1": ""}
-        r = HTTP.get(url, headers=self._headers("FHKUP03500000"), params=params, timeout=15)
-        if r.status_code != 200: return []
-        data = r.json()
-        if data.get("rt_cd") != "0": return []
-        codes = [row.get("mksc_shrn_iscd", "").strip() for row in data.get("output", []) if row.get("mksc_shrn_iscd", "").strip()]
-        return codes[:top_n]
+        try:
+            url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/volume-rank"
+            params = {"FID_COND_MRK_DIV_CODE": "J", "FID_COND_SCR_DIV_CODE": "20171", "FID_INPUT_ISCD": "0000", "FID_DIV_CLS_CODE": "0", "FID_BLNG_CLS_CODE": "0", "FID_TRGT_CLS_CODE": "111111111", "FID_TRGT_EXLS_CLS_CODE": "0000000000", "FID_INPUT_PRICE_1": "", "FID_INPUT_PRICE_2": "", "FID_VOL_CNT": "", "FID_INPUT_DATE_1": ""}
+            r = HTTP.get(url, headers=self._headers("FHKUP03500000"), params=params, timeout=15)
+            if r.status_code != 200:
+                self._fail()
+                return []
+            data = r.json()
+            self._record_result(data)
+            if data.get("rt_cd") != "0":
+                return []
+            codes = [row.get("mksc_shrn_iscd", "").strip() for row in data.get("output", []) if row.get("mksc_shrn_iscd", "").strip()]
+            return codes[:top_n]
+        except Exception:
+            self._fail()
+            raise
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def get_daily(self, symbol: str, n: int = 60) -> list:
-        today = datetime.now().strftime("%Y%m%d")
-        start = (datetime.now() - timedelta(days=365 * 3)).strftime("%Y%m%d")
-        mrkt_div = "E" if symbol in self.ETF_MARKET_CODES else "J"
-        params = {"FID_COND_MRKT_DIV_CODE": mrkt_div, "FID_INPUT_ISCD": symbol, "FID_INPUT_DATE_1": start, "FID_INPUT_DATE_2": today, "FID_PERIOD_DIV_CODE": "D", "FID_ORG_ADJ_PRC": "0"}
-        r = HTTP.get(f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice", headers=self._headers("FHKST03010100"), params=params, timeout=15)
-        if r.status_code != 200: return []
-        data = r.json()
-        if data.get("rt_cd") != "0": return []
-        return data.get("output2", [])[:n]
+        try:
+            today = datetime.now().strftime("%Y%m%d")
+            start = (datetime.now() - timedelta(days=365 * 3)).strftime("%Y%m%d")
+            mrkt_div = "E" if symbol in self.ETF_MARKET_CODES else "J"
+            params = {"FID_COND_MRKT_DIV_CODE": mrkt_div, "FID_INPUT_ISCD": symbol, "FID_INPUT_DATE_1": start, "FID_INPUT_DATE_2": today, "FID_PERIOD_DIV_CODE": "D", "FID_ORG_ADJ_PRC": "0"}
+            r = HTTP.get(f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice", headers=self._headers("FHKST03010100"), params=params, timeout=15)
+            if r.status_code != 200:
+                self._fail()
+                return []
+            data = r.json()
+            self._record_result(data)
+            if data.get("rt_cd") != "0":
+                return []
+            return data.get("output2", [])[:n]
+        except Exception:
+            self._fail()
+            raise
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def place_order(self, symbol: str, order_type: str, price: int, qty: int) -> dict:
@@ -140,9 +185,15 @@ class KIStockAPI:
         tr_id = ("VTTC0802U" if config.trading_env == "demo" else "TTTC0802U") if order_type == "buy" else ("VTTC0801U" if config.trading_env == "demo" else "TTTC0801U")
         url = f"{self.base_url}/uapi/domestic-stock/v1/trading/order-cash"
         body = {"CANO": config.kistock_account[:8], "ACNT_PRDT_CD": config.kistock_account[8:] if len(config.kistock_account) > 8 else "01", "PDNO": symbol, "ORD_DVSN": "01" if price == 0 else "00", "ORD_QTY": str(qty), "ORD_UNPR": str(price)}
-        r = HTTP.post(url, headers=self._headers(tr_id), json=body, timeout=15)
-        r.raise_for_status()
-        return r.json()
+        try:
+            r = HTTP.post(url, headers=self._headers(tr_id), json=body, timeout=15)
+            r.raise_for_status()
+            data = r.json()
+            self._record_result(data)
+            return data
+        except Exception:
+            self._fail()
+            raise
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def get_trade_history(self, start_date: str, end_date: str) -> list:
@@ -166,11 +217,16 @@ class KIStockAPI:
             "CTX_AREA_FK100": "",
             "CTX_AREA_NK100": ""
         }
-        r = HTTP.get(url, headers=self._headers(tr_id), params=params, timeout=15)
-        if r.status_code != 200:
-            logger.error(f"HTTP Error {r.status_code}: {r.text}")
-        r.raise_for_status()
-        data = r.json()
-        if data.get("rt_cd") != "0":
-            raise Exception(data.get("msg1", "unknown KIS trade history error"))
-        return data.get("output1", [])
+        try:
+            r = HTTP.get(url, headers=self._headers(tr_id), params=params, timeout=15)
+            if r.status_code != 200:
+                logger.error(f"HTTP Error {r.status_code}: {r.text}")
+            r.raise_for_status()
+            data = r.json()
+            if data.get("rt_cd") != "0":
+                raise Exception(data.get("msg1", "unknown KIS trade history error"))
+            self._success()
+            return data.get("output1", [])
+        except Exception:
+            self._fail()
+            raise

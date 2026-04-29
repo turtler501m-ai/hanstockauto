@@ -13,8 +13,10 @@ from src.notifier.slack import slack_session_start, slack_order, slack_candidate
 from src.strategy.seven_split import (
     WATCHLIST, KOSPI_UNIVERSE, STOCK_NAMES,
     generate_signal, build_scan_universe, find_candidates, build_orders,
-    generate_ai_weight_plan, generate_portfolio_optimizer_plan
+    generate_ai_weight_plan, generate_portfolio_optimizer_plan,
+    calc_strategy_profile,
 )
+from src.strategy.indicators import calc_bollinger, calc_macd, calc_rsi, calc_sma
 from src.strategy.risk import RiskEngine
 from src.strategy.router import OrderRouter
 
