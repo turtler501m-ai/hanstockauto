@@ -100,7 +100,12 @@ class KIStockAPI:
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def get_quote(self, symbol: str) -> dict:
         r = HTTP.get(f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-price", headers=self._headers("FHKST01010100"), params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": symbol}, timeout=10)
-        output = r.json().get("output", {})
+        data = r.json()
+        if data.get("rt_cd") != "0":
+            import time
+            time.sleep(1) # 한도 초과 시 1초 대기 후 재시도 유도
+            raise Exception(data.get("msg1", "KIS get_quote error"))
+        output = data.get("output", {})
         return {"current": float(output.get("stck_prpr", 0)), "ask1": float(output.get("askp1", 0)), "bid1": float(output.get("bidp1", 0))}
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
