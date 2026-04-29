@@ -16,6 +16,10 @@ class KISConfigError(RuntimeError):
     """Non-retryable KIS app/environment mismatch."""
 
 
+class KISRateLimitError(RuntimeError):
+    """Non-retryable KIS API rate limit response."""
+
+
 class KIStockAPI:
     TOKEN_CACHE = Path("data") / "kis_token.json"
     ETF_MARKET_CODES = {
@@ -108,6 +112,8 @@ class KIStockAPI:
         msg = data.get("msg1", fallback)
         if data.get("msg_cd") == "EGW02004":
             return KISConfigError(msg)
+        if data.get("msg_cd") == "EGW00201":
+            return KISRateLimitError(msg)
         return Exception(msg)
 
     def _response_json(self, response: requests.Response, context: str) -> dict:
@@ -120,13 +126,16 @@ class KIStockAPI:
             logger.error(f"{context} HTTP {response.status_code}: {response.text}")
             if data.get("msg_cd") == "EGW02004":
                 raise KISConfigError(msg)
+            if data.get("msg_cd") == "EGW00201":
+                raise KISRateLimitError(msg)
             response.raise_for_status()
         return data
 
     @retry(
         retry=retry_if_not_exception_type(KISConfigError),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        wait=wait_exponential(multiplier=2, min=5, max=30),
+        reraise=True,
     )
     def get_balance(self) -> dict:
         try:

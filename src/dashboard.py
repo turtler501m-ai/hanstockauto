@@ -1,7 +1,9 @@
 import json
+import hashlib
 import os
 import sqlite3
 import subprocess
+import threading
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -14,6 +16,7 @@ load_dotenv()
 from src import trader  # noqa: E402
 from src.trader import KIStockAPI  # noqa: E402
 from src.api.kis_api import KISConfigError  # noqa: E402
+from src.notifier.slack import slack_order as _slack_order, slack_error as _slack_error  # noqa: E402
 
 
 app = FastAPI(title="Seven Split Dashboard", version="1.0.0")
@@ -25,7 +28,36 @@ DB_PATH = trader.DB_PATH
 FINRL_DIR = BASE_DIR / "vendor" / "FinRL"
 BALANCE_CACHE = trader.RUNTIME_DIR / "balance_snapshot.json"
 CANDIDATE_CACHE = trader.RUNTIME_DIR / "candidate_snapshot.json"
+AUTO_APPROVAL_STATE = trader.RUNTIME_DIR / "auto_approval.json"
+ENV_PATH = BASE_DIR / ".env"
 CANDIDATE_CACHE_TTL_SECONDS = int(os.environ.get("CANDIDATE_CACHE_TTL_SECONDS", "180"))
+BALANCE_CACHE_TTL_SECONDS = int(os.environ.get("BALANCE_CACHE_TTL_SECONDS", "30"))
+_balance_fetch_lock = threading.Lock()
+ENV_FIELDS = [
+    {"key": "KISTOCK_APP_KEY", "label": "KIS App Key", "type": "secret"},
+    {"key": "KISTOCK_APP_SECRET", "label": "KIS App Secret", "type": "secret"},
+    {"key": "KISTOCK_ACCOUNT", "label": "KIS Account", "type": "secret", "hint": "계좌번호 8자리 + 상품코드 2자리, 예: 1234567801"},
+    {"key": "TRADING_ENV", "label": "Trading Env", "type": "select", "options": ["demo", "real"]},
+    {"key": "DRY_RUN", "label": "Dry Run", "type": "bool"},
+    {"key": "ENABLE_LIVE_TRADING", "label": "Enable Live Trading", "type": "bool"},
+    {"key": "REQUIRE_APPROVAL", "label": "Require Approval", "type": "bool"},
+    {"key": "SPLIT_N", "label": "Split N", "type": "int"},
+    {"key": "STOP_LOSS_PCT", "label": "Stop Loss %", "type": "float"},
+    {"key": "TAKE_PROFIT", "label": "Take Profit %", "type": "float"},
+    {"key": "RSI_BUY", "label": "RSI Buy", "type": "int"},
+    {"key": "RSI_SELL", "label": "RSI Sell", "type": "int"},
+    {"key": "TOTAL_CAPITAL", "label": "Total Capital", "type": "float"},
+    {"key": "MAX_POSITIONS", "label": "Max Positions", "type": "int"},
+    {"key": "MAX_SINGLE_WEIGHT", "label": "Max Single Weight", "type": "float"},
+    {"key": "CASH_BUFFER", "label": "Cash Buffer", "type": "float"},
+    {"key": "MAX_DAILY_LOSS_PCT", "label": "Max Daily Loss %", "type": "float"},
+    {"key": "SCAN_UNIVERSE_SIZE", "label": "Scan Universe Size", "type": "int"},
+    {"key": "KIS_CIRCUIT_COOLDOWN_SECONDS", "label": "KIS Circuit Cooldown Seconds", "type": "int"},
+    {"key": "TRADE_DB_PATH", "label": "Trade DB Path", "type": "text"},
+    {"key": "ACTIVE_MODEL_VERSION", "label": "Active Model Version", "type": "text"},
+    {"key": "SLACK_WEBHOOK_URL", "label": "Slack Webhook URL", "type": "secret"},
+]
+ENV_FIELD_MAP = {field["key"]: field for field in ENV_FIELDS}
 VENDOR_PROJECTS = {
     "finrl": {
         "name": "FinRL",
@@ -93,7 +125,19 @@ app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
 def _required_env_missing() -> list[str]:
     required = ["KISTOCK_APP_KEY", "KISTOCK_APP_SECRET", "KISTOCK_ACCOUNT"]
-    return [name for name in required if not os.environ.get(name)]
+    missing = [name for name in required if not os.environ.get(name)]
+    if _account_format_warning(trader.config.kistock_account):
+        missing.append("KISTOCK_ACCOUNT_FORMAT")
+    return missing
+
+
+def _account_format_warning(account: str) -> str:
+    digits = "".join(char for char in str(account or "") if char.isdigit())
+    if not digits:
+        return "KISTOCK_ACCOUNT is required"
+    if len(digits) != 10:
+        return "KISTOCK_ACCOUNT must be 10 digits: 8-digit account number + 2-digit product code"
+    return ""
 
 
 def _to_int(value, default: int = 0) -> int:
@@ -133,9 +177,7 @@ def _portfolio_totals(cash: int, summary_total: int, holdings: list[dict]) -> di
     stock_eval = sum(_to_int(holding.get("value")) for holding in holdings)
     broker_total = max(0, summary_total)
     calculated_total = max(0, cash) + stock_eval
-    effective_total = broker_total
-    if stock_eval > 0 and (effective_total <= 0 or effective_total < max(cash, stock_eval)):
-        effective_total = calculated_total
+    effective_total = broker_total if broker_total >= stock_eval else calculated_total
     if effective_total <= 0:
         effective_total = calculated_total
     return {
@@ -173,8 +215,14 @@ def _parse_balance(balance_data: dict) -> dict:
             "_raw": stock,
         })
 
-    cash = _to_int(first_summary.get("dnca_tot_amt"))
-    totals = _portfolio_totals(cash, _to_int(first_summary.get("tot_evlu_amt")), holdings)
+    summary_total = _to_int(first_summary.get("tot_evlu_amt"))
+    summary_stock_eval = _to_int(first_summary.get("scts_evlu_amt"))
+    cash = _to_int(first_summary.get("prvs_rcdl_excc_amt"))
+    if cash <= 0 and summary_total > 0 and summary_stock_eval > 0:
+        cash = max(0, summary_total - summary_stock_eval)
+    if cash <= 0:
+        cash = _to_int(first_summary.get("dnca_tot_amt"))
+    totals = _portfolio_totals(cash, summary_total, holdings)
     return {
         "cash": cash,
         "total_eval": totals["total_eval"],
@@ -192,12 +240,18 @@ def _get_api() -> KIStockAPI:
     return KIStockAPI(notify_errors=False)
 
 
+def _account_cache_key() -> str:
+    source = f"{trader.TRADING_ENV}:{trader.config.kistock_account}"
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
 def _save_balance_cache(balance_data: dict) -> None:
     BALANCE_CACHE.parent.mkdir(parents=True, exist_ok=True)
     BALANCE_CACHE.write_text(
         json.dumps({
             "cached_at": trader.datetime.now(trader.KST).isoformat(),
             "trading_env": trader.TRADING_ENV,
+            "account_key": _account_cache_key(),
             "data": balance_data,
         }, ensure_ascii=False),
         encoding="utf-8",
@@ -213,6 +267,8 @@ def _load_balance_cache() -> dict | None:
         return None
     if cached.get("trading_env") != trader.TRADING_ENV:
         return None
+    if cached.get("account_key") != _account_cache_key():
+        return None
     data = cached.get("data")
     if not isinstance(data, dict):
         return None
@@ -220,42 +276,55 @@ def _load_balance_cache() -> dict | None:
     return data
 
 
+def _balance_cache_age_seconds(balance_data: dict) -> float | None:
+    cached_at = balance_data.get("_cache", {}).get("cached_at", "")
+    if not cached_at:
+        return None
+    try:
+        return (trader.datetime.now(trader.KST) - trader.datetime.fromisoformat(cached_at)).total_seconds()
+    except Exception:
+        return None
+
+
 def _get_balance_data(api: KIStockAPI, allow_cache: bool = True) -> dict:
     if allow_cache:
         cached = _load_balance_cache()
         if cached is not None:
-            cached_at = cached.get("_cache", {}).get("cached_at", "")
-            if cached_at:
-                try:
-                    age = (trader.datetime.now(trader.KST) - trader.datetime.fromisoformat(cached_at)).total_seconds()
-                    if age < 3:
-                        return cached
-                except Exception:
-                    pass
-    try:
-        balance_data = api.get_balance()
-    except KISConfigError:
+            age = _balance_cache_age_seconds(cached)
+            if age is not None and age < BALANCE_CACHE_TTL_SECONDS:
+                return cached
+
+    with _balance_fetch_lock:
         if allow_cache:
             cached = _load_balance_cache()
             if cached is not None:
-                return cached
-        raise
-    except Exception:
-        if allow_cache:
-            cached = _load_balance_cache()
-            if cached is not None:
-                return cached
-        raise
-    try:
-        _parse_balance(balance_data)
-    except Exception:
-        if allow_cache:
-            cached = _load_balance_cache()
-            if cached is not None:
-                return cached
-        raise
-    _save_balance_cache(balance_data)
-    return balance_data
+                age = _balance_cache_age_seconds(cached)
+                if age is not None and age < BALANCE_CACHE_TTL_SECONDS:
+                    return cached
+        try:
+            balance_data = api.get_balance()
+        except KISConfigError:
+            if allow_cache:
+                cached = _load_balance_cache()
+                if cached is not None:
+                    return cached
+            raise
+        except Exception:
+            if allow_cache:
+                cached = _load_balance_cache()
+                if cached is not None:
+                    return cached
+            raise
+        try:
+            _parse_balance(balance_data)
+        except Exception:
+            if allow_cache:
+                cached = _load_balance_cache()
+                if cached is not None:
+                    return cached
+            raise
+        _save_balance_cache(balance_data)
+        return balance_data
 
 
 def _load_candidate_cache(min_score: int) -> dict | None:
@@ -332,6 +401,132 @@ def _approval_row(row) -> dict:
     return dict(row)
 
 
+def _auto_approval_enabled() -> bool:
+    if not AUTO_APPROVAL_STATE.exists():
+        return False
+    try:
+        state = json.loads(AUTO_APPROVAL_STATE.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    return bool(state.get("enabled"))
+
+
+def _save_auto_approval(enabled: bool) -> None:
+    AUTO_APPROVAL_STATE.parent.mkdir(parents=True, exist_ok=True)
+    AUTO_APPROVAL_STATE.write_text(
+        json.dumps({
+            "enabled": bool(enabled),
+            "updated_at": trader.datetime.now(trader.KST).isoformat(),
+        }, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def _read_env_values(path: Path = ENV_PATH) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        value = _env_value_without_inline_comment(value.strip())
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def _env_value_without_inline_comment(value: str) -> str:
+    quote = None
+    for index, char in enumerate(value):
+        if char in ("'", '"') and (index == 0 or value[index - 1] != "\\"):
+            quote = None if quote == char else (char if quote is None else quote)
+        if char == "#" and quote is None and index > 0 and value[index - 1].isspace():
+            return value[:index].strip()
+    return value.strip()
+
+
+def _mask_env_value(value: str) -> str:
+    if not value:
+        return ""
+    if len(value) <= 4:
+        return "*" * len(value)
+    return f"{value[:2]}{'*' * max(4, len(value) - 4)}{value[-2:]}"
+
+
+def _validate_env_value(key: str, value: object) -> str:
+    field = ENV_FIELD_MAP[key]
+    value_text = _env_value_without_inline_comment(str(value).strip())
+    field_type = field["type"]
+    if field_type == "bool":
+        lowered = value_text.lower()
+        if lowered not in {"true", "false", "1", "0", "yes", "no", "on", "off"}:
+            raise HTTPException(status_code=400, detail=f"{key} must be a boolean")
+        return "true" if lowered in {"true", "1", "yes", "on"} else "false"
+    if field_type == "int":
+        try:
+            int(value_text)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"{key} must be an integer") from exc
+        return value_text
+    if field_type == "float":
+        try:
+            float(value_text)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"{key} must be a number") from exc
+        return value_text
+    if field_type == "select":
+        options = field.get("options", [])
+        if value_text not in options:
+            raise HTTPException(status_code=400, detail=f"{key} must be one of: {', '.join(options)}")
+        return value_text
+    if key == "KISTOCK_ACCOUNT":
+        digits = "".join(char for char in value_text if char.isdigit())
+        warning = _account_format_warning(digits)
+        if warning:
+            raise HTTPException(status_code=400, detail=warning)
+        return digits
+    return value_text
+
+
+def _serialize_env_value(value: str) -> str:
+    if not value or any(char.isspace() for char in value) or "#" in value:
+        return json.dumps(value, ensure_ascii=False)
+    return value
+
+
+def _write_env_values(updates: dict[str, str], path: Path = ENV_PATH) -> None:
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    seen: set[str] = set()
+    output: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            output.append(line)
+            continue
+        key = stripped.split("=", 1)[0].strip()
+        if key in updates:
+            value_part = line.split("=", 1)[1]
+            suffix = ""
+            comment_index = value_part.find(" #")
+            if comment_index >= 0:
+                suffix = value_part[comment_index:]
+            output.append(f"{key}={_serialize_env_value(updates[key])}{suffix}")
+            seen.add(key)
+        else:
+            output.append(line)
+    missing = [key for key in updates if key not in seen]
+    if missing:
+        if output and output[-1].strip():
+            output.append("")
+        output.append("# Dashboard updates")
+        output.extend(f"{key}={_serialize_env_value(updates[key])}" for key in missing)
+    path.write_text("\n".join(output) + "\n", encoding="utf-8")
+
+
 @app.get("/", response_class=FileResponse)
 async def read_root():
     return FileResponse(WEB_DIR / "templates" / "index.html")
@@ -345,6 +540,16 @@ async def read_finrl_dashboard():
 @app.get("/vendors", response_class=FileResponse)
 async def read_vendor_dashboard():
     return FileResponse(WEB_DIR / "templates" / "vendors.html")
+
+
+@app.get("/ai-dashboard", response_class=FileResponse)
+async def read_ai_dashboard():
+    return FileResponse(WEB_DIR / "templates" / "ai_dashboard.html")
+
+
+@app.get("/env-settings", response_class=FileResponse)
+async def read_env_settings():
+    return FileResponse(WEB_DIR / "templates" / "env_settings.html")
 
 
 def _license_name(text: str, hint: str) -> str:
@@ -394,9 +599,11 @@ def _vendor_status(slug: str, meta: dict) -> dict:
 @app.get("/api/health")
 async def health():
     missing = _required_env_missing()
+    account_warning = _account_format_warning(trader.config.kistock_account)
     return {
-        "ok": not missing,
+        "ok": not missing and not account_warning,
         "missing": missing,
+        "account_warning": account_warning,
         "trading_env": trader.TRADING_ENV,
         "dry_run": trader.DRY_RUN,
         "enable_live_trading": trader.ENABLE_LIVE_TRADING,
@@ -405,6 +612,7 @@ async def health():
         "real_orders_enabled": trader.REAL_ORDERS_ENABLED,
         "circuit_breaker": KIStockAPI.circuit_status(),
         "active_model_version": getattr(trader.config, "active_model_version", "v1"),
+        "auto_approval_enabled": _auto_approval_enabled(),
         "kill_switch_active": Path(".runtime/kill_switch.json").exists()
     }
 
@@ -441,16 +649,76 @@ async def get_config():
     }
 
 
+@app.get("/api/env")
+async def get_env_settings():
+    values = _read_env_values()
+    fields = []
+    for field in ENV_FIELDS:
+        key = field["key"]
+        value = values.get(key, "")
+        item = {
+            "key": key,
+            "label": field["label"],
+            "type": field["type"],
+            "options": field.get("options", []),
+            "hint": field.get("hint", ""),
+            "secret": field["type"] == "secret",
+            "has_value": bool(value),
+            "value": value,
+            "masked": "",
+        }
+        fields.append(item)
+    return {
+        "path": str(ENV_PATH),
+        "exists": ENV_PATH.exists(),
+        "requires_restart": True,
+        "fields": fields,
+    }
+
+
+@app.post("/api/env")
+async def update_env_settings(payload: dict = Body(...)):
+    raw_updates = payload.get("values")
+    if not isinstance(raw_updates, dict):
+        raise HTTPException(status_code=400, detail="values must be an object")
+
+    updates: dict[str, str] = {}
+    for key, value in raw_updates.items():
+        if key not in ENV_FIELD_MAP:
+            raise HTTPException(status_code=400, detail=f"{key} is not editable")
+        field = ENV_FIELD_MAP[key]
+        if field["type"] == "secret" and str(value).strip() == "":
+            continue
+        updates[key] = _validate_env_value(key, value)
+
+    if updates:
+        _write_env_values(updates)
+    return {
+        "ok": True,
+        "updated": sorted(updates.keys()),
+        "requires_restart": True,
+    }
+
+
 @app.post("/api/circuit-breaker/reset")
 async def reset_circuit_breaker():
     KIStockAPI.reset_circuit()
     return {"ok": True, "circuit_breaker": KIStockAPI.circuit_status()}
 
 
+@app.post("/api/auto-approval")
+async def set_auto_approval(payload: dict = Body(...)):
+    enabled = bool(payload.get("enabled"))
+    _save_auto_approval(enabled)
+    return {"ok": True, "enabled": enabled}
+
+
 @app.get("/api/balance")
 async def get_balance():
     missing = _required_env_missing()
     if missing:
+        if "KISTOCK_ACCOUNT_FORMAT" in missing:
+            raise HTTPException(status_code=503, detail="KISTOCK_ACCOUNT must be 10 digits: 8-digit account number + 2-digit product code")
         raise HTTPException(status_code=503, detail=f"Missing environment variables: {', '.join(missing)}")
 
     try:
@@ -790,6 +1058,20 @@ async def approve_order(approval_id: int):
             "UPDATE approvals SET status = ?, response_msg = ?, updated_at = ? WHERE id = ?",
             (status, response_msg, now, approval_id),
         )
+
+    # Slack 알림
+    try:
+        indicators = {"rsi": "-", "sma20": 0, "sma60": 0, "rt": 0}
+        _slack_order(
+            item["name"], item["symbol"], item["action"],
+            item["qty"], item["price"],
+            f"[대시보드 수동승인] {item.get('reason', '')}",
+            status == "executed",
+            indicators,
+        )
+    except Exception:
+        pass
+
     return {"id": approval_id, "status": status, "response_msg": response_msg}
 
 
@@ -828,6 +1110,131 @@ def fetch_cloud_trades():
         err_msg = traceback.format_exc()
         return [{"ts": "-", "symbol": "ERROR", "name": f"ERROR: {err_msg}", "action": "buy", "qty": 0, "price": 0, "reason": str(e), "ok": 0}]
 
+
+def _load_merged_trades() -> list[dict]:
+    cloud_trades = fetch_cloud_trades() or []
+    local_trades = []
+    with trader.connect_db() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT * FROM trades ORDER BY ts ASC").fetchall()
+        local_trades = [dict(row) for row in rows]
+
+    merged_trades = {}
+    for t in cloud_trades + local_trades:
+        ts = t.get("ts") or t.get("timestamp")
+        if not ts:
+            continue
+        key = f"{ts}_{t.get('symbol')}_{t.get('action')}"
+        merged_trades[key] = {
+            "ts": ts,
+            "symbol": t.get("symbol"),
+            "name": t.get("name", t.get("symbol")),
+            "action": t.get("action"),
+            "qty": _to_int(t.get("qty")),
+            "price": _to_int(t.get("price")),
+            "reason": t.get("reason", ""),
+            "ok": t.get("ok", 1),
+            "env": t.get("env", "demo"),
+            "dry_run": t.get("dry_run", 0),
+        }
+    return sorted(merged_trades.values(), key=lambda x: x["ts"])
+
+
+def _trade_is_ok(trade: dict) -> bool:
+    return bool(_to_int(trade.get("ok"), 1))
+
+
+def _trade_is_dry_run(trade: dict) -> bool:
+    return bool(_to_int(trade.get("dry_run"), 0))
+
+
+def _trade_is_sync_adjustment(trade: dict) -> bool:
+    reason = str(trade.get("reason") or "").lower()
+    return any(token in reason for token in ("동기화", "보정", "sync", "adjust"))
+
+
+def _account_trades(trades: list[dict]) -> list[dict]:
+    return [
+        trade
+        for trade in trades
+        if _trade_is_ok(trade)
+        and not _trade_is_dry_run(trade)
+        and not _trade_is_sync_adjustment(trade)
+    ]
+
+
+def _period_bucket() -> dict:
+    return {
+        "order_count": 0,
+        "buy_count": 0,
+        "sell_count": 0,
+        "buy_amount": 0,
+        "sell_amount": 0,
+        "realized_pnl": 0,
+        "net_cashflow": 0,
+    }
+
+
+def _build_periodic_performance(trades: list[dict]) -> dict:
+    daily: dict[str, dict] = {}
+    monthly: dict[str, dict] = {}
+    holdings: dict[str, dict] = {}
+
+    for trade in _account_trades(trades):
+        ts = str(trade.get("ts") or "")
+        if len(ts) < 10 or ts[0] == "-":
+            continue
+
+        day_key = ts[:10]
+        month_key = ts[:7]
+        action = str(trade.get("action") or "").lower()
+        symbol = str(trade.get("symbol") or "")
+        qty = _to_int(trade.get("qty"))
+        price = _to_int(trade.get("price"))
+        amount = qty * price
+
+        if qty <= 0 or price <= 0 or action not in {"buy", "sell"}:
+            continue
+
+        day = daily.setdefault(day_key, _period_bucket())
+        month = monthly.setdefault(month_key, _period_bucket())
+        for bucket in (day, month):
+            bucket["order_count"] += 1
+            if action == "buy":
+                bucket["buy_count"] += 1
+                bucket["buy_amount"] += amount
+            else:
+                bucket["sell_count"] += 1
+                bucket["sell_amount"] += amount
+
+        if symbol not in holdings:
+            holdings[symbol] = {"qty": 0, "avg_cost": 0.0}
+        holding = holdings[symbol]
+
+        if action == "buy":
+            total_qty = holding["qty"] + qty
+            total_cost = holding["qty"] * holding["avg_cost"] + amount
+            holding["qty"] = total_qty
+            holding["avg_cost"] = total_cost / total_qty if total_qty > 0 else 0.0
+        else:
+            sell_qty = min(qty, holding["qty"])
+            realized = int((price - holding["avg_cost"]) * sell_qty)
+            day["realized_pnl"] += realized
+            month["realized_pnl"] += realized
+            holding["qty"] = max(0, holding["qty"] - sell_qty)
+            if holding["qty"] <= 0:
+                holding["avg_cost"] = 0.0
+
+    for rows in (daily, monthly):
+        for bucket in rows.values():
+            bucket["net_cashflow"] = bucket["sell_amount"] - bucket["buy_amount"]
+
+    return {
+        "daily": [{"period": key, **value} for key, value in sorted(daily.items())],
+        "monthly": [{"period": key, **value} for key, value in sorted(monthly.items())],
+    }
+
+
 @app.post("/api/trades/sync")
 async def sync_trades():
     if trader.DRY_RUN:
@@ -853,7 +1260,7 @@ async def sync_trades():
             key = f"{ts}_{t.get('symbol')}_{t.get('action')}"
             merged_trades[key] = t
             
-        trades = sorted(merged_trades.values(), key=lambda x: x.get("ts", ""))
+        trades = _account_trades(sorted(merged_trades.values(), key=lambda x: x.get("ts", "")))
         
         db_holdings = {}
         names = {}
@@ -960,10 +1367,20 @@ async def get_trades(limit: int = 50):
                 "dry_run": t.get("dry_run", 0)
             }
             
-        trades = sorted(merged_trades.values(), key=lambda x: x["ts"], reverse=True)
+        trades = sorted(_account_trades(list(merged_trades.values())), key=lambda x: x["ts"], reverse=True)
         return {"trades": trades[:limit]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/performance/periodic")
+async def get_periodic_performance():
+    try:
+        trades = _load_merged_trades()
+        return _build_periodic_performance(trades)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/performance")
 async def get_performance():
@@ -995,7 +1412,7 @@ async def get_performance():
                 "dry_run": t.get("dry_run", 0)
             }
             
-        trades = sorted(merged_trades.values(), key=lambda x: x["ts"])
+        trades = _account_trades(sorted(merged_trades.values(), key=lambda x: x["ts"]))
         
         total_trades = len(trades)
         success_count = sum(1 for t in trades if t.get("ok", False))
