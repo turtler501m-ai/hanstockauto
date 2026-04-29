@@ -60,13 +60,13 @@ const translateReason = (value) => {
         ['golden cross buy', '골든크로스 매수'],
         ['AI allocation target', 'AI 목표비중'],
         ['Portfolio optimizer target', '포트폴리오 목표비중'],
-        ['score', '점수'],
-        ['vol', '변동성'],
     ];
     let text = String(value || '-');
     replacements.forEach(([from, to]) => {
         text = text.replaceAll(from, to);
     });
+    text = text.replace(/\bscore\b/g, '점수');
+    text = text.replace(/\bvol\b/g, '변동성');
     return text;
 };
 
@@ -381,9 +381,9 @@ async function renderRuntime() {
     const health = await fetchJson('/api/health');
     const circuit = health.circuit_breaker || {};
     document.getElementById('runtime-env').textContent = health.trading_env === 'real' ? '실전' : '모의';
-    document.getElementById('runtime-dry-run').innerHTML = health.dry_run ? pill('켜짐', 'warn') : pill('꺼짐', 'buy');
-    document.getElementById('runtime-order').innerHTML = health.order_submission_enabled ? pill('가능', 'buy') : pill('차단', 'warn');
-    document.getElementById('runtime-real').innerHTML = health.real_orders_enabled ? pill('가능', 'sell') : pill('차단', 'hold');
+    document.getElementById('runtime-dry-run').innerHTML = health.dry_run ? pill('주문차단', 'warn') : pill('전송허용', 'buy');
+    document.getElementById('runtime-order').innerHTML = health.order_submission_enabled ? pill('API 전송 가능', 'buy') : pill('API 전송 차단', 'warn');
+    document.getElementById('runtime-real').innerHTML = health.real_orders_enabled ? pill('실주문 가능', 'sell') : pill('실주문 차단', 'hold');
     document.getElementById('runtime-circuit').innerHTML = circuit.opened
         ? pill(`차단 ${circuit.retry_after_seconds || 0}초`, 'sell')
         : pill(`정상 ${circuit.error_count || 0}/${circuit.max_errors || 5}`, 'buy');
@@ -441,12 +441,20 @@ async function renderConfig() {
 }
 
 function renderRisk(balance) {
-    const total = Number(balance.total_eval || 0);
+    const holdingValue = (balance.holdings || []).reduce((sum, holding) => {
+        return sum + Number(holding.value || (Number(holding.qty || 0) * Number(holding.price || 0)));
+    }, 0);
+    const reportedTotal = Number(balance.total_eval || 0);
     const cash = Number(balance.cash || 0);
-    const exposure = Math.max(0, total - cash);
-    const cashRatio = total > 0 ? cash / total : 0;
+    const exposure = Number(balance.stock_eval || holdingValue || 0);
+    const total = exposure > 0 && reportedTotal < Math.max(cash, exposure)
+        ? cash + exposure
+        : reportedTotal;
+    const cashRatio = typeof balance.cash_ratio === 'number'
+        ? balance.cash_ratio
+        : (total > 0 ? Math.min(1, Math.max(0, cash / total)) : 0);
     const maxPosition = Math.max(0, ...balance.holdings.map((holding) => Number(holding.value || 0)));
-    const concentration = total > 0 ? maxPosition / total : 0;
+    const concentration = total > 0 ? Math.min(1, Math.max(0, maxPosition / total)) : 0;
     const pnl = Number(balance.pnl || 0);
     const capital = Number(latestConfig?.total_capital || total || 1);
     const lossUsage = pnl < 0 && latestConfig?.max_daily_loss_pct
@@ -462,8 +470,14 @@ function renderRisk(balance) {
 async function renderBalance() {
     try {
         const balance = await fetchJson('/api/balance');
+        const holdingValue = (balance.holdings || []).reduce((sum, holding) => {
+            return sum + Number(holding.value || (Number(holding.qty || 0) * Number(holding.price || 0)));
+        }, 0);
+        const displayTotal = holdingValue > 0 && Number(balance.total_eval || 0) < Math.max(Number(balance.cash || 0), holdingValue)
+            ? Number(balance.cash || 0) + holdingValue
+            : Number(balance.total_eval || 0);
 
-        document.getElementById('val-total').textContent = formatCurrency(balance.total_eval);
+        document.getElementById('val-total').textContent = formatCurrency(displayTotal);
         document.getElementById('val-cash').textContent = formatCurrency(balance.cash);
         document.getElementById('val-holdings').textContent = balance.holdings.length;
 

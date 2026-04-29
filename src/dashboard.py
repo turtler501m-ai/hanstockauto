@@ -13,6 +13,7 @@ load_dotenv()
 
 from src import trader  # noqa: E402
 from src.trader import KIStockAPI  # noqa: E402
+from src.api.kis_api import KISConfigError  # noqa: E402
 
 
 app = FastAPI(title="Seven Split Dashboard", version="1.0.0")
@@ -117,6 +118,36 @@ def _summary_item(summary):
     return {}
 
 
+def _clamp_ratio(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def _holding_value(stock: dict, qty: int, price: int) -> int:
+    broker_value = _to_int(stock.get("evlu_amt"))
+    if broker_value > 0:
+        return broker_value
+    return qty * price
+
+
+def _portfolio_totals(cash: int, summary_total: int, holdings: list[dict]) -> dict:
+    stock_eval = sum(_to_int(holding.get("value")) for holding in holdings)
+    broker_total = max(0, summary_total)
+    calculated_total = max(0, cash) + stock_eval
+    effective_total = broker_total
+    if stock_eval > 0 and (effective_total <= 0 or effective_total < max(cash, stock_eval)):
+        effective_total = calculated_total
+    if effective_total <= 0:
+        effective_total = calculated_total
+    return {
+        "stock_eval": stock_eval,
+        "broker_total_eval": broker_total,
+        "calculated_total_eval": calculated_total,
+        "total_eval": effective_total,
+        "cash_ratio": _clamp_ratio(cash / effective_total) if effective_total > 0 else 0.0,
+        "stock_ratio": _clamp_ratio(stock_eval / effective_total) if effective_total > 0 else 0.0,
+    }
+
+
 def _parse_balance(balance_data: dict) -> dict:
     if balance_data.get("_error"):
         raise RuntimeError(balance_data["_error"])
@@ -128,6 +159,9 @@ def _parse_balance(balance_data: dict) -> dict:
     for stock in stocks:
         qty = _to_int(stock.get("hldg_qty"))
         price = _to_int(stock.get("prpr"))
+        value = _holding_value(stock, qty, price)
+        if price <= 0 and qty > 0:
+            price = round(value / qty)
         holdings.append({
             "symbol": stock.get("pdno", ""),
             "name": stock.get("prdt_name", stock.get("pdno", "")),
@@ -135,13 +169,20 @@ def _parse_balance(balance_data: dict) -> dict:
             "price": price,
             "rt": _to_float(stock.get("evlu_pfls_rt")),
             "pnl": _to_int(stock.get("evlu_pfls_amt")),
-            "value": qty * price,
+            "value": value,
             "_raw": stock,
         })
 
+    cash = _to_int(first_summary.get("dnca_tot_amt"))
+    totals = _portfolio_totals(cash, _to_int(first_summary.get("tot_evlu_amt")), holdings)
     return {
-        "cash": _to_int(first_summary.get("dnca_tot_amt")),
-        "total_eval": _to_int(first_summary.get("tot_evlu_amt")),
+        "cash": cash,
+        "total_eval": totals["total_eval"],
+        "broker_total_eval": totals["broker_total_eval"],
+        "calculated_total_eval": totals["calculated_total_eval"],
+        "stock_eval": totals["stock_eval"],
+        "cash_ratio": totals["cash_ratio"],
+        "stock_ratio": totals["stock_ratio"],
         "pnl": _to_int(first_summary.get("evlu_pfls_smtl_amt")),
         "holdings": holdings,
     }
@@ -193,6 +234,12 @@ def _get_balance_data(api: KIStockAPI, allow_cache: bool = True) -> dict:
                     pass
     try:
         balance_data = api.get_balance()
+    except KISConfigError:
+        if allow_cache:
+            cached = _load_balance_cache()
+            if cached is not None:
+                return cached
+        raise
     except Exception:
         if allow_cache:
             cached = _load_balance_cache()
@@ -1086,6 +1133,10 @@ async def get_risk_status():
         return {
             "total_capital": total_capital,
             "current_total": parsed.get("total_eval", 0),
+            "stock_eval": parsed.get("stock_eval", 0),
+            "cash": parsed.get("cash", 0),
+            "cash_ratio": parsed.get("cash_ratio", 0),
+            "stock_ratio": parsed.get("stock_ratio", 0),
             "daily_pnl": pnl,
             "daily_loss_pct": round(loss_pct, 2),
             "max_daily_loss_pct": max_daily_loss,

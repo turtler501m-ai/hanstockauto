@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timedelta
 import requests
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 from pathlib import Path
 
 from src.config import config
@@ -10,6 +10,11 @@ from src.notifier.slack import slack_error
 
 HTTP = requests.Session()
 HTTP.trust_env = False
+
+
+class KISConfigError(RuntimeError):
+    """Non-retryable KIS app/environment mismatch."""
+
 
 class KIStockAPI:
     TOKEN_CACHE = Path("data") / "kis_token.json"
@@ -99,7 +104,30 @@ class KIStockAPI:
         else:
             self._fail()
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    def _kis_error(self, data: dict, fallback: str) -> Exception:
+        msg = data.get("msg1", fallback)
+        if data.get("msg_cd") == "EGW02004":
+            return KISConfigError(msg)
+        return Exception(msg)
+
+    def _response_json(self, response: requests.Response, context: str) -> dict:
+        try:
+            data = response.json()
+        except ValueError:
+            data = {}
+        if response.status_code != 200:
+            msg = data.get("msg1") or response.text
+            logger.error(f"{context} HTTP {response.status_code}: {response.text}")
+            if data.get("msg_cd") == "EGW02004":
+                raise KISConfigError(msg)
+            response.raise_for_status()
+        return data
+
+    @retry(
+        retry=retry_if_not_exception_type(KISConfigError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
     def get_balance(self) -> dict:
         try:
             tr_id = "VTTC8434R" if config.trading_env == "demo" else "TTTC8434R"
@@ -108,28 +136,28 @@ class KIStockAPI:
             acnt = config.kistock_account[8:] if len(config.kistock_account) > 8 else "01"
             params = {"CANO": cano, "ACNT_PRDT_CD": acnt, "AFHR_FLPR_YN": "N", "OFL_YN": "", "INQR_DVSN": "02", "UNPR_DVSN": "01", "FUND_STTL_ICLD_YN": "N", "FNCG_AMT_AUTO_RDPT_YN": "N", "PRCS_DVSN": "01", "CTX_AREA_FK100": "", "CTX_AREA_NK100": ""}
             r = HTTP.get(url, headers=self._headers(tr_id), params=params, timeout=15)
-            if r.status_code != 200:
-                logger.error(f"HTTP Error {r.status_code}: {r.text}")
-            r.raise_for_status()
-            data = r.json()
+            data = self._response_json(r, "Balance")
             if data.get("rt_cd") != "0":
-                raise Exception(data.get("msg1", "unknown KIS balance error"))
+                raise self._kis_error(data, "unknown KIS balance error")
             self._success()
             return data
         except Exception:
             self._fail()
             raise
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    @retry(
+        retry=retry_if_not_exception_type(KISConfigError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
     def get_quote(self, symbol: str) -> dict:
         try:
             r = HTTP.get(f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-price", headers=self._headers("FHKST01010100"), params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": symbol}, timeout=10)
-            r.raise_for_status()
-            data = r.json()
+            data = self._response_json(r, "Quote")
             if data.get("rt_cd") != "0":
                 import time
                 time.sleep(1) # 한도 초과 시 1초 대기 후 재시도 유도
-                raise Exception(data.get("msg1", "KIS get_quote error"))
+                raise self._kis_error(data, "KIS get_quote error")
             self._success()
             output = data.get("output", {})
             return {"current": float(output.get("stck_prpr", 0)), "ask1": float(output.get("askp1", 0)), "bid1": float(output.get("bidp1", 0))}
@@ -137,16 +165,17 @@ class KIStockAPI:
             self._fail()
             raise
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    @retry(
+        retry=retry_if_not_exception_type(KISConfigError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
     def get_volume_rank(self, top_n: int = 50) -> list[str]:
         try:
             url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/volume-rank"
             params = {"FID_COND_MRK_DIV_CODE": "J", "FID_COND_SCR_DIV_CODE": "20171", "FID_INPUT_ISCD": "0000", "FID_DIV_CLS_CODE": "0", "FID_BLNG_CLS_CODE": "0", "FID_TRGT_CLS_CODE": "111111111", "FID_TRGT_EXLS_CLS_CODE": "0000000000", "FID_INPUT_PRICE_1": "", "FID_INPUT_PRICE_2": "", "FID_VOL_CNT": "", "FID_INPUT_DATE_1": ""}
             r = HTTP.get(url, headers=self._headers("FHKUP03500000"), params=params, timeout=15)
-            if r.status_code != 200:
-                self._fail()
-                return []
-            data = r.json()
+            data = self._response_json(r, "Volume rank")
             self._record_result(data)
             if data.get("rt_cd") != "0":
                 return []
@@ -156,7 +185,11 @@ class KIStockAPI:
             self._fail()
             raise
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    @retry(
+        retry=retry_if_not_exception_type(KISConfigError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
     def get_daily(self, symbol: str, n: int = 60) -> list:
         try:
             today = datetime.now().strftime("%Y%m%d")
@@ -164,10 +197,7 @@ class KIStockAPI:
             mrkt_div = "E" if symbol in self.ETF_MARKET_CODES else "J"
             params = {"FID_COND_MRKT_DIV_CODE": mrkt_div, "FID_INPUT_ISCD": symbol, "FID_INPUT_DATE_1": start, "FID_INPUT_DATE_2": today, "FID_PERIOD_DIV_CODE": "D", "FID_ORG_ADJ_PRC": "0"}
             r = HTTP.get(f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice", headers=self._headers("FHKST03010100"), params=params, timeout=15)
-            if r.status_code != 200:
-                self._fail()
-                return []
-            data = r.json()
+            data = self._response_json(r, "Daily chart")
             self._record_result(data)
             if data.get("rt_cd") != "0":
                 return []
@@ -176,7 +206,11 @@ class KIStockAPI:
             self._fail()
             raise
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    @retry(
+        retry=retry_if_not_exception_type(KISConfigError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
     def place_order(self, symbol: str, order_type: str, price: int, qty: int) -> dict:
         real_orders_enabled = (not config.dry_run) and config.trading_env == "real" and config.enable_live_trading
         order_submission_enabled = (not config.dry_run) and (config.trading_env == "demo" or real_orders_enabled)
@@ -187,15 +221,18 @@ class KIStockAPI:
         body = {"CANO": config.kistock_account[:8], "ACNT_PRDT_CD": config.kistock_account[8:] if len(config.kistock_account) > 8 else "01", "PDNO": symbol, "ORD_DVSN": "01" if price == 0 else "00", "ORD_QTY": str(qty), "ORD_UNPR": str(price)}
         try:
             r = HTTP.post(url, headers=self._headers(tr_id), json=body, timeout=15)
-            r.raise_for_status()
-            data = r.json()
+            data = self._response_json(r, "Order")
             self._record_result(data)
             return data
         except Exception:
             self._fail()
             raise
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    @retry(
+        retry=retry_if_not_exception_type(KISConfigError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
     def get_trade_history(self, start_date: str, end_date: str) -> list:
         tr_id = "VTTC8001R" if config.trading_env == "demo" else "TTTC8001R"
         url = f"{self.base_url}/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
@@ -219,12 +256,9 @@ class KIStockAPI:
         }
         try:
             r = HTTP.get(url, headers=self._headers(tr_id), params=params, timeout=15)
-            if r.status_code != 200:
-                logger.error(f"HTTP Error {r.status_code}: {r.text}")
-            r.raise_for_status()
-            data = r.json()
+            data = self._response_json(r, "Trade history")
             if data.get("rt_cd") != "0":
-                raise Exception(data.get("msg1", "unknown KIS trade history error"))
+                raise self._kis_error(data, "unknown KIS trade history error")
             self._success()
             return data.get("output1", [])
         except Exception:

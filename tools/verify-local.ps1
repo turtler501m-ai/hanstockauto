@@ -6,7 +6,7 @@ if (-not (Test-Path -LiteralPath $python)) {
 }
 
 & $python -m compileall src tests
-& $python -m unittest tests.test_trader_core
+& $python -m unittest discover -s tests
 
 node --check web\static\js\app.js
 node --check web\static\js\finrl.js
