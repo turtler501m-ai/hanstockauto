@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "ts": "2026-04-29 09:47:35",
+    "symbol": "066570",
+    "name": "LG전자",
+    "action": "buy",
+    "qty": 2,
+    "price": 138600,
+    "reason": "golden cross SMA20=122175>SMA60=117823",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 1
+  },
+  {
+    "ts": "2026-04-29 09:47:38",
+    "symbol": "005930",
+    "name": "005930",
+    "action": "buy",
+    "qty": 10,
+    "price": 221000,
+    "reason": "new buy score=4 (MACD positive, trend pullback RSI2=0, SMA20>SMA60)",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 1
+  }
+]
