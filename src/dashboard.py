@@ -357,6 +357,8 @@ async def health():
         "order_submission_enabled": trader.ORDER_SUBMISSION_ENABLED,
         "real_orders_enabled": trader.REAL_ORDERS_ENABLED,
         "circuit_breaker": KIStockAPI.circuit_status(),
+        "active_model_version": getattr(trader.config, "active_model_version", "v1"),
+        "kill_switch_active": Path(".runtime/kill_switch.json").exists()
     }
 
 
@@ -998,6 +1000,62 @@ async def get_performance():
         total_eval_pnl = total_broker_pnl
         
         if trader.DRY_RUN:
+            pass # 기존 로직 생략
+
+@app.get("/api/risk/status")
+async def get_risk_status():
+    try:
+        api = _get_api()
+        balance_data = _get_balance_data(api, allow_cache=True)
+        parsed = _parse_balance(balance_data)
+        
+        total_capital = trader.TOTAL_CAPITAL
+        pnl = parsed.get("pnl", 0)
+        loss_pct = abs(pnl) / total_capital * 100 if total_capital > 0 and pnl < 0 else 0
+        max_daily_loss = trader.config.max_daily_loss_pct
+        
+        return {
+            "total_capital": total_capital,
+            "current_total": parsed.get("total_eval", 0),
+            "daily_pnl": pnl,
+            "daily_loss_pct": round(loss_pct, 2),
+            "max_daily_loss_pct": max_daily_loss,
+            "halted": loss_pct >= max_daily_loss or Path(".runtime/kill_switch.json").exists()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/decisions/history")
+async def get_decision_history(limit: int = 50):
+    try:
+        with trader.connect_db() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM decision_logs ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
+            logs = [dict(row) for row in rows]
+            for log in logs:
+                if isinstance(log.get("indicators"), str):
+                    try:
+                        log["indicators"] = json.loads(log["indicators"])
+                    except:
+                        pass
+            return {"decisions": logs}
+    except Exception as e:
+        return {"decisions": []}
+
+@app.post("/api/system/kill")
+async def activate_kill_switch():
+    kill_file = Path(".runtime/kill_switch.json")
+    kill_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(kill_file, "w") as f:
+        json.dump({"active": True, "ts": trader.datetime.now(trader.KST).isoformat()}, f)
+    return {"ok": True, "msg": "Kill switch activated"}
+
+@app.post("/api/system/unkill")
+async def deactivate_kill_switch():
+    kill_file = Path(".runtime/kill_switch.json")
+    if kill_file.exists():
+        kill_file.unlink()
+    return {"ok": True, "msg": "Kill switch deactivated"}
             total_eval_pnl = 0
             for sym, data in holdings.items():
                 if data["qty"] > 0:
