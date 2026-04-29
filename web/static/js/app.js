@@ -679,7 +679,7 @@ async function renderCandidates() {
                     data-price="${Number(row.limit_price || row.current_price || 0)}"
                     data-reason="${escapeHtml((row.reasons || []).join(', '))}"
                     data-source="candidate">승인대기</button>`
-                : '';
+                : `<button type="button" class="button-ghost" disabled title="잔고 부족 또는 최대 보유 종목 수(MAX_POSITIONS) 초과로 매수할 수 없습니다." style="opacity:0.5; cursor:not-allowed;">승인불가</button>`;
 
             // 상세 근거 빌드
             const reasonLines = (row.reasons || []).map(r => strategyReasonLabel(r));
