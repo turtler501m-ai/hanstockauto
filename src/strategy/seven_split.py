@@ -7,6 +7,8 @@ from src.config import config
 from src.utils.logger import logger
 from src.notifier.slack import slack_error
 from src.strategy.indicators import calc_rsi, calc_sma, calc_macd, calc_bollinger
+from src.strategy.predict import ModelPredictor
+from src.strategy.allocator import PortfolioAllocator
 
 WATCHLIST = [
     "005930",  # Samsung Electronics
@@ -437,6 +439,7 @@ def find_candidates(
     candidates: list[dict] = []
     scan_summary: list[dict] = []  # 기준 미달 포함 전체 분석 결과
     symbols = [f"{code}.KS" for code in scan_list]
+    predictor = ModelPredictor()
 
     batch = None
     scan_error: str | None = None
@@ -485,7 +488,9 @@ def find_candidates(
 
             current = float(closes.iloc[-1])
             profile = calc_strategy_profile(closes.tolist(), highs.tolist(), volumes.tolist())
-            score = profile["score"]
+            profile["strategy_score"] = profile["score"]
+            
+            score = predictor.predict_score(profile)
             reasons = profile["reasons"]
 
             entry = {
@@ -548,38 +553,14 @@ def build_orders(candidates: list[dict], get_quote_fn: Callable[[str], dict], he
         logger.info(f"[INFO] Max positions reached ({config.max_positions}); no new buy orders")
         return []
 
-    deployable = config.total_capital * (1 - config.cash_buffer)
-    per_position = deployable * config.max_single_weight
-    cost_mult = 1.001
-
-    orders = []
     for c in candidates[:available_slots]:
         quote = get_quote_fn(c["ticker"])
         raw_price = int(quote["ask1"] or quote["current"])
-        price = adjust_tick_size(raw_price)
-        
-        if price <= 0:
-            continue
-        qty = math.floor(per_position / (price * cost_mult))
-        if qty <= 0:
-            continue
-        orders.append({
-            "ticker": c["ticker"],
-            "quantity": qty,
-            "limit_price": price,
-            "estimated_cost": qty * price * cost_mult,
-            "score": c["score"],
-            "reasons": c["reasons"],
-        })
+        c["limit_price"] = adjust_tick_size(raw_price)
 
-    total_cost = sum(o["estimated_cost"] for o in orders)
-    budget = min(deployable, cash)
-    if total_cost > budget and budget > 0:
-        scale = budget / total_cost
-        for o in orders:
-            o["quantity"] = math.floor(o["quantity"] * scale)
-            o["estimated_cost"] = o["quantity"] * o["limit_price"] * cost_mult
-    return [o for o in orders if o["quantity"] > 0]
+    allocator = PortfolioAllocator()
+    orders = allocator.allocate(candidates[:available_slots], cash, config.total_capital)
+    return orders
 
 
 def generate_signal(stock: dict, daily_data: list) -> dict:

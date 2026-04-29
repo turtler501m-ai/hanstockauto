@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     kis_circuit_cooldown_seconds: int = 60
     trade_db_path: str = ".runtime/trades.sqlite"
     log_file: str = "logs/trader.log"
+    active_model_version: str = "v1"
 
     model_config = SettingsConfigDict(
         env_file=".env",
