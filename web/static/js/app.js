@@ -1,4 +1,4 @@
-const formatCurrency = (value) => {
+﻿const formatCurrency = (value) => {
     return new Intl.NumberFormat('ko-KR', {
         style: 'currency',
         currency: 'KRW',
@@ -27,16 +27,16 @@ const escapeHtml = (value) => {
 };
 
 const ACTION_LABELS = {
-    buy: '매수',
-    sell: '매도',
-    hold: '보유',
+    buy: '留ㅼ닔',
+    sell: '留ㅻ룄',
+    hold: '蹂댁쑀',
 };
 
 const STATUS_LABELS = {
-    pending: '승인대기',
-    executed: '처리완료',
-    failed: '실패',
-    rejected: '거절',
+    pending: '?뱀씤?湲?,
+    executed: '泥섎━?꾨즺',
+    failed: '?ㅽ뙣',
+    rejected: '嫄곗젅',
 };
 
 const toKorAction = (value) => {
@@ -51,43 +51,43 @@ const toKorStatus = (value) => {
 
 const translateReason = (value) => {
     const replacements = [
-        ['stop loss', '손절 기준 도달'],
-        ['take profit', '익절 기준 도달'],
-        ['large profit split sell', '큰 수익 분할매도'],
-        ['MACD bearish take profit', 'MACD 약세 익절'],
-        ['split buy', '분할매수'],
-        ['multi-strategy buy', '복합 전략 매수'],
-        ['golden cross buy', '골든크로스 매수'],
-        ['AI allocation target', 'AI 목표비중'],
-        ['Portfolio optimizer target', '포트폴리오 목표비중'],
+        ['stop loss', '?먯젅 湲곗? ?꾨떖'],
+        ['take profit', '?듭젅 湲곗? ?꾨떖'],
+        ['large profit split sell', '???섏씡 遺꾪븷留ㅻ룄'],
+        ['MACD bearish take profit', 'MACD ?쎌꽭 ?듭젅'],
+        ['split buy', '遺꾪븷留ㅼ닔'],
+        ['multi-strategy buy', '蹂듯빀 ?꾨왂 留ㅼ닔'],
+        ['golden cross buy', '怨⑤뱺?щ줈??留ㅼ닔'],
+        ['AI allocation target', 'AI 紐⑺몴鍮꾩쨷'],
+        ['Portfolio optimizer target', '?ы듃?대━??紐⑺몴鍮꾩쨷'],
     ];
     let text = String(value || '-');
     replacements.forEach(([from, to]) => {
         text = text.replaceAll(from, to);
     });
-    text = text.replace(/\bscore\b/g, '점수');
-    text = text.replace(/\bvol\b/g, '변동성');
+    text = text.replace(/\bscore\b/g, '?먯닔');
+    text = text.replace(/\bvol\b/g, '蹂?숈꽦');
     return text;
 };
 
 const strategyReasonLabel = (reason) => {
     const text = String(reason || '').trim();
     if (!text) {
-        return '데이터 부족';
+        return '?곗씠??遺議?;
     }
 
     const mappings = [
-        ['RSI recovery', '과매도 구간에서 반등 신호가 확인됐습니다.'],
-        ['RSI pullback', '단기 조정 뒤 재진입을 검토할 수 있는 구간입니다.'],
-        ['MACD bullish cross', 'MACD 골든크로스가 나와 상승 전환 가능성이 있습니다.'],
-        ['MACD positive', 'MACD 흐름이 플러스라 단기 모멘텀이 유지되고 있습니다.'],
-        ['Bollinger rebound', '볼린저 하단 반등이 나와 기술적 되돌림 가능성이 있습니다.'],
-        ['near lower band', '주가가 볼린저 하단 부근이라 반등 관찰 구간입니다.'],
-        ['trend pullback', '상승 추세 안에서 눌림목이 나온 모습입니다.'],
-        ['long trend pullback', '중기 상승 추세 안에서 조정이 진행 중입니다.'],
-        ['20-day breakout with volume', '거래량을 동반한 20일 돌파가 나왔습니다.'],
-        ['volume spike', '거래량이 평소보다 강하게 증가했습니다.'],
-        ['SMA20>SMA60', '단기 이동평균이 중기선 위에 있어 추세가 우호적입니다.']
+        ['RSI recovery', '怨쇰ℓ??援ш컙?먯꽌 諛섎벑 ?좏샇媛 ?뺤씤?먯뒿?덈떎.'],
+        ['RSI pullback', '?④린 議곗젙 ???ъ쭊?낆쓣 寃?좏븷 ???덈뒗 援ш컙?낅땲??'],
+        ['MACD bullish cross', 'MACD 怨⑤뱺?щ줈?ㅺ? ?섏? ?곸듅 ?꾪솚 媛?μ꽦???덉뒿?덈떎.'],
+        ['MACD positive', 'MACD ?먮쫫???뚮윭?ㅻ씪 ?④린 紐⑤찘????좎??섍퀬 ?덉뒿?덈떎.'],
+        ['Bollinger rebound', '蹂쇰┛? ?섎떒 諛섎벑???섏? 湲곗닠???섎룎由?媛?μ꽦???덉뒿?덈떎.'],
+        ['near lower band', '二쇨?媛 蹂쇰┛? ?섎떒 遺洹쇱씠??諛섎벑 愿李?援ш컙?낅땲??'],
+        ['trend pullback', '?곸듅 異붿꽭 ?덉뿉???뚮┝紐⑹씠 ?섏삩 紐⑥뒿?낅땲??'],
+        ['long trend pullback', '以묎린 ?곸듅 異붿꽭 ?덉뿉??議곗젙??吏꾪뻾 以묒엯?덈떎.'],
+        ['20-day breakout with volume', '嫄곕옒?됱쓣 ?숇컲??20???뚰뙆媛 ?섏솕?듬땲??'],
+        ['volume spike', '嫄곕옒?됱씠 ?됱냼蹂대떎 媛뺥븯寃?利앷??덉뒿?덈떎.'],
+        ['SMA20>SMA60', '?④린 ?대룞?됯퇏??以묎린???꾩뿉 ?덉뼱 異붿꽭媛 ?고샇?곸엯?덈떎.']
     ];
 
     for (const [needle, label] of mappings) {
@@ -100,22 +100,22 @@ const strategyReasonLabel = (reason) => {
 
 const aiActionGuide = (action, name) => {
     if (action === 'buy') {
-        return `${name} 비중을 조금 더 실어도 된다는 판단입니다.`;
+        return `${name} 鍮꾩쨷??議곌툑 ???ㅼ뼱???쒕떎???먮떒?낅땲??`;
     }
     if (action === 'sell') {
-        return `${name} 비중이 현재 조건 대비 다소 크므로 줄이는 편이 낫다는 판단입니다.`;
+        return `${name} 鍮꾩쨷???꾩옱 議곌굔 ?鍮??ㅼ냼 ?щ?濡?以꾩씠???몄씠 ?ル떎???먮떒?낅땲??`;
     }
-    return `${name}은 지금은 비중을 크게 바꾸지 않고 유지하는 편이 낫다는 판단입니다.`;
+    return `${name}? 吏湲덉? 鍮꾩쨷???ш쾶 諛붽씀吏 ?딄퀬 ?좎??섎뒗 ?몄씠 ?ル떎???먮떒?낅땲??`;
 };
 
 const aiDecisionLabel = (action) => {
     if (action === 'buy') {
-        return '비중 확대';
+        return '鍮꾩쨷 ?뺣?';
     }
     if (action === 'sell') {
-        return '비중 축소';
+        return '鍮꾩쨷 異뺤냼';
     }
-    return '비중 유지';
+    return '鍮꾩쨷 ?좎?';
 };
 
 function buildAiModalMarkup(payload) {
@@ -123,13 +123,13 @@ function buildAiModalMarkup(payload) {
     const summary = payload.reasoning_kr || aiActionGuide(payload.action, payload.name);
     const reasonItems = reasons.length
         ? reasons.map((reason) => `<li>${escapeHtml(strategyReasonLabel(reason))}</li>`).join('')
-        : '<li>뚜렷한 기술적 신호가 충분하지 않아 보수적으로 판단했습니다.</li>';
+        : '<li>?쒕졆??湲곗닠???좏샇媛 異⑸텇?섏? ?딆븘 蹂댁닔?곸쑝濡??먮떒?덉뒿?덈떎.</li>';
 
     const signalItems = [
-        `AI 점수는 <strong>${escapeHtml(formatNumber(payload.score, 2))}</strong>점입니다.`,
-        `현재 비중은 <strong>${escapeHtml(formatNumber(payload.currentWeight * 100, 1))}%</strong>, 목표 비중은 <strong>${escapeHtml(formatNumber(payload.targetWeight * 100, 1))}%</strong>입니다.`,
-        `차이 금액은 <strong>${escapeHtml(formatCurrency(payload.deltaValue))}</strong>이며, 실행 액션은 <strong>${escapeHtml(aiDecisionLabel(payload.action))}</strong>입니다.`,
-        `최근 변동성은 <strong>${escapeHtml(formatNumber(payload.volatility * 100, 1))}%</strong>로 계산되었습니다.`
+        `AI ?먯닔??<strong>${escapeHtml(formatNumber(payload.score, 2))}</strong>?먯엯?덈떎.`,
+        `?꾩옱 鍮꾩쨷? <strong>${escapeHtml(formatNumber(payload.currentWeight * 100, 1))}%</strong>, 紐⑺몴 鍮꾩쨷? <strong>${escapeHtml(formatNumber(payload.targetWeight * 100, 1))}%</strong>?낅땲??`,
+        `李⑥씠 湲덉븸? <strong>${escapeHtml(formatCurrency(payload.deltaValue))}</strong>?대ŉ, ?ㅽ뻾 ?≪뀡? <strong>${escapeHtml(aiDecisionLabel(payload.action))}</strong>?낅땲??`,
+        `理쒓렐 蹂?숈꽦? <strong>${escapeHtml(formatNumber(payload.volatility * 100, 1))}%</strong>濡?怨꾩궛?섏뿀?듬땲??`
     ].map((line) => `<li>${line}</li>`).join('');
 
     const rawReasons = reasons.length
@@ -142,19 +142,19 @@ function buildAiModalMarkup(payload) {
             <p>${escapeHtml(summary)}</p>
         </div>
         <div class="ai-modal-section">
-            <h3>한눈에 보기</h3>
+            <h3>?쒕늿??蹂닿린</h3>
             <ul class="ai-modal-list">${signalItems}</ul>
         </div>
         <div class="ai-modal-section">
-            <h3>왜 이런 판단이 나왔나</h3>
+            <h3>???대윴 ?먮떒???섏솕??/h3>
             <ul class="ai-modal-list">${reasonItems}</ul>
             ${rawReasons}
         </div>
         <div class="ai-modal-section">
-            <h3>읽는 법</h3>
+            <h3>?쎈뒗 踰?/h3>
             <p class="ai-modal-footnote">
-                목표 비중은 “이 종목을 전체 자산에서 어느 정도까지 가져가면 좋은지”를 뜻합니다.
-                현재 비중보다 목표 비중이 높으면 매수 쪽, 낮으면 축소 쪽으로 해석하면 됩니다.
+                紐⑺몴 鍮꾩쨷? ?쒖씠 醫낅ぉ???꾩껜 ?먯궛?먯꽌 ?대뒓 ?뺣룄源뚯? 媛?멸?硫?醫뗭?吏?앸? ?삵빀?덈떎.
+                ?꾩옱 鍮꾩쨷蹂대떎 紐⑺몴 鍮꾩쨷???믪쑝硫?留ㅼ닔 履? ??쑝硫?異뺤냼 履쎌쑝濡??댁꽍?섎㈃ ?⑸땲??
             </p>
         </div>
     `;
@@ -183,7 +183,7 @@ async function fetchJson(url) {
     const response = await fetch(url);
     const data = await response.json();
     if (!response.ok) {
-        throw new Error(data.detail || `요청 실패: ${response.status}`);
+        throw new Error(data.detail || `?붿껌 ?ㅽ뙣: ${response.status}`);
     }
     return data;
 }
@@ -196,7 +196,7 @@ async function postJson(url, payload = {}) {
     });
     const data = await response.json();
     if (!response.ok) {
-        throw new Error(data.detail || `요청 실패: ${response.status}`);
+        throw new Error(data.detail || `?붿껌 ?ㅽ뙣: ${response.status}`);
     }
     return data;
 }
@@ -224,16 +224,16 @@ function setNoCandidatesModalOpen(open) {
 function buildScanErrorModalMarkup(errorMsg) {
     return `
         <div class="ai-modal-section">
-            <h3>오류 내용</h3>
+            <h3>?ㅻ쪟 ?댁슜</h3>
             <p class="ai-modal-footnote">${escapeHtml(errorMsg)}</p>
         </div>
         <div class="ai-modal-section">
-            <h3>이렇게 해보세요</h3>
+            <h3>?대젃寃??대낫?몄슂</h3>
             <ul class="ai-modal-list">
-                <li>잠시 후 다시 <strong>찾기</strong> 버튼을 눌러보세요.</li>
-                <li>인터넷 연결 상태를 확인하세요.</li>
-                <li>장 시간 중(09:00~15:30)에는 데이터가 더 안정적으로 수신됩니다.</li>
-                <li>문제가 계속되면 YFINANCE_TIMEOUT_SECONDS 환경변수를 늘려보세요 (기본값: 8초).</li>
+                <li>?좎떆 ???ㅼ떆 <strong>李얘린</strong> 踰꾪듉???뚮윭蹂댁꽭??</li>
+                <li>?명꽣???곌껐 ?곹깭瑜??뺤씤?섏꽭??</li>
+                <li>???쒓컙 以?09:00~15:30)?먮뒗 ?곗씠?곌? ???덉젙?곸쑝濡??섏떊?⑸땲??</li>
+                <li>臾몄젣媛 怨꾩냽?섎㈃ YFINANCE_TIMEOUT_SECONDS ?섍꼍蹂?섎? ?섎젮蹂댁꽭??(湲곕낯媛? 8珥?.</li>
             </ul>
         </div>
     `;
@@ -244,22 +244,22 @@ function buildNoCandidatesModalMarkup(data) {
     const minScore = data.min_score || 2;
     const scanned = data.scanned || summary.length;
 
-    // 점수 분포
+    // ?먯닔 遺꾪룷
     const scoreGroups = { 0: 0, 1: 0 };
     summary.forEach(item => {
         const s = item.score || 0;
         scoreGroups[s] = (scoreGroups[s] || 0) + 1;
     });
 
-    // 가장 높은 점수 종목들 (상위 8개)
+    // 媛???믪? ?먯닔 醫낅ぉ??(?곸쐞 8媛?
     const top = summary.slice(0, 8);
 
     const scoreDistItems = Object.entries(scoreGroups)
         .sort((a, b) => Number(b[0]) - Number(a[0]))
-        .map(([score, count]) => `<li><strong>${score}점</strong>: ${count}종목</li>`)
+        .map(([score, count]) => `<li><strong>${score}??/strong>: ${count}醫낅ぉ</li>`)
         .join('');
 
-    // 시그널 집계: 어떤 신호가 가장 많이 발생했나
+    // ?쒓렇??吏묎퀎: ?대뼡 ?좏샇媛 媛??留롮씠 諛쒖깮?덈굹
     const signalCount = {};
     summary.forEach(item => {
         (item.reasons || []).forEach(r => {
@@ -269,14 +269,14 @@ function buildNoCandidatesModalMarkup(data) {
     const topSignals = Object.entries(signalCount)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 4)
-        .map(([r, cnt]) => `<li>${escapeHtml(strategyReasonLabel(r))} <span class="muted">(${cnt}종목)</span></li>`)
+        .map(([r, cnt]) => `<li>${escapeHtml(strategyReasonLabel(r))} <span class="muted">(${cnt}醫낅ぉ)</span></li>`)
         .join('');
 
     const topRows = top.map(item => {
         const scoreClass = item.score >= minScore ? 'buy' : (item.score > 0 ? 'warn' : 'sell');
-        const reasonText = (item.reasons || []).map(r => strategyReasonLabel(r)).join(', ') || '신호 없음';
+        const reasonText = (item.reasons || []).map(r => strategyReasonLabel(r)).join(', ') || '?좏샇 ?놁쓬';
         const gap = minScore - item.score;
-        const gapText = gap > 0 ? `<span class="muted">(${gap}점 부족)</span>` : '<span class="pill pill-buy">통과</span>';
+        const gapText = gap > 0 ? `<span class="muted">(${gap}??遺議?</span>` : '<span class="pill pill-buy">?듦낵</span>';
         return `
             <tr>
                 <td><span class="symbol-name">${escapeHtml(item.ticker)}</span></td>
@@ -288,60 +288,56 @@ function buildNoCandidatesModalMarkup(data) {
     }).join('');
 
     const marketMood = summary.length === 0
-        ? '데이터를 수신하지 못했습니다.'
+        ? '?곗씠?곕? ?섏떊?섏? 紐삵뻽?듬땲??'
         : summary.every(i => i.score === 0)
-            ? '분석한 모든 종목에서 매수 신호가 하나도 발생하지 않았습니다. 시장 전반이 관망 국면일 가능성이 높습니다.'
-            : `일부 종목에서 약한 신호(${Math.max(...summary.map(i=>i.score))}점)가 있으나 기준(${minScore}점)에 미치지 못합니다. 시장 모멘텀이 아직 충분히 형성되지 않은 상태입니다.`;
+            ? '遺꾩꽍??紐⑤뱺 醫낅ぉ?먯꽌 留ㅼ닔 ?좏샇媛 ?섎굹??諛쒖깮?섏? ?딆븯?듬땲?? ?쒖옣 ?꾨컲??愿留?援?㈃??媛?μ꽦???믪뒿?덈떎.'
+            : `?쇰? 醫낅ぉ?먯꽌 ?쏀븳 ?좏샇(${Math.max(...summary.map(i=>i.score))}??媛 ?덉쑝??湲곗?(${minScore}????誘몄튂吏 紐삵빀?덈떎. ?쒖옣 紐⑤찘????꾩쭅 異⑸텇???뺤꽦?섏? ?딆? ?곹깭?낅땲??`;
 
     return `
         <div class="ai-modal-section">
-            <h3>스캔 요약</h3>
+            <h3>?ㅼ틪 ?붿빟</h3>
             <ul class="ai-modal-list">
-                <li>분석 종목 수: <strong>${scanned}종목</strong></li>
-                <li>매수 기준 점수: <strong>${minScore}점 이상</strong></li>
-                <li>매수 후보: <strong>0종목</strong></li>
+                <li>遺꾩꽍 醫낅ぉ ?? <strong>${scanned}醫낅ぉ</strong></li>
+                <li>留ㅼ닔 湲곗? ?먯닔: <strong>${minScore}???댁긽</strong></li>
+                <li>留ㅼ닔 ?꾨낫: <strong>0醫낅ぉ</strong></li>
             </ul>
         </div>
         <div class="ai-modal-section">
-            <h3>시장 판단</h3>
+            <h3>?쒖옣 ?먮떒</h3>
             <p class="ai-modal-footnote">${escapeHtml(marketMood)}</p>
         </div>
         ${topSignals ? `
         <div class="ai-modal-section">
-            <h3>감지된 부분 신호 (기준 미달)</h3>
+            <h3>媛먯???遺遺??좏샇 (湲곗? 誘몃떖)</h3>
             <ul class="ai-modal-list">${topSignals}</ul>
         </div>` : ''}
         <div class="ai-modal-section">
-            <h3>점수별 종목 분포</h3>
-            <ul class="ai-modal-list">${scoreDistItems || '<li>분석 데이터 없음</li>'}</ul>
+            <h3>?먯닔蹂?醫낅ぉ 遺꾪룷</h3>
+            <ul class="ai-modal-list">${scoreDistItems || '<li>遺꾩꽍 ?곗씠???놁쓬</li>'}</ul>
         </div>
         ${topRows ? `
         <div class="ai-modal-section">
-            <h3>상위 스코어 종목 상세</h3>
+            <h3>?곸쐞 ?ㅼ퐫??醫낅ぉ ?곸꽭</h3>
             <div class="table-responsive">
                 <table>
-                    <thead><tr><th>종목</th><th>점수</th><th>RSI</th><th>MACD</th><th>감지 신호</th></tr></thead>
+                    <thead><tr><th>醫낅ぉ</th><th>?먯닔</th><th>RSI</th><th>MACD</th><th>媛먯? ?좏샇</th></tr></thead>
                     <tbody>${topRows}</tbody>
                 </table>
             </div>
         </div>` : ''}
         <div class="ai-modal-section">
-            <h3>이렇게 해보세요</h3>
+            <h3>?대젃寃??대낫?몄슂</h3>
             <ul class="ai-modal-list">
-                <li>잠시 후 다시 검색하거나, 장 시작 직후/마감 1시간 전에 시도해보세요.</li>
-                <li>최소 점수를 1점으로 낮추면 더 많은 후보를 볼 수 있습니다.</li>
-                <li>시장 전반이 하락 국면이라면 현금 비중을 유지하는 것이 유리합니다.</li>
+                <li>?좎떆 ???ㅼ떆 寃?됲븯嫄곕굹, ???쒖옉 吏곹썑/留덇컧 1?쒓컙 ?꾩뿉 ?쒕룄?대낫?몄슂.</li>
+                <li>理쒖냼 ?먯닔瑜?1?먯쑝濡???텛硫???留롮? ?꾨낫瑜?蹂????덉뒿?덈떎.</li>
+                <li>?쒖옣 ?꾨컲???섎씫 援?㈃?대씪硫??꾧툑 鍮꾩쨷???좎??섎뒗 寃껋씠 ?좊━?⑸땲??</li>
             </ul>
         </div>
     `;
 }
 
 let portfolioChartInstance = null;
-let performancePeriodChartInstance = null;
-let latestPerformancePeriod = null;
-let activePerformancePeriod = 'daily';
 let latestConfig = null;
-let autoApprovalEnabled = false;
 
 function renderPortfolioChart(labels, data, colors) {
     if (typeof Chart === 'undefined') {
@@ -381,173 +377,26 @@ function renderPortfolioChart(labels, data, colors) {
     });
 }
 
-function renderPerformancePeriodChart(data) {
-    const canvas = document.getElementById('performancePeriodChart');
-    if (!canvas || typeof Chart === 'undefined') {
-        return;
-    }
-
-    latestPerformancePeriod = data || latestPerformancePeriod;
-    const source = latestPerformancePeriod || { daily: [], monthly: [] };
-    const limit = activePerformancePeriod === 'daily' ? 31 : 12;
-    const rows = (source[activePerformancePeriod] || []).slice(-limit);
-    const labels = rows.length ? rows.map((row) => row.period) : ['데이터 없음'];
-    const realizedPnl = rows.length ? rows.map((row) => Number(row.realized_pnl || 0)) : [0];
-    const buyAmount = rows.length ? rows.map((row) => Number(row.buy_amount || 0)) : [0];
-    const sellAmount = rows.length ? rows.map((row) => Number(row.sell_amount || 0)) : [0];
-    const netCashflow = rows.length ? rows.map((row) => Number(row.net_cashflow || 0)) : [0];
-    renderPerformanceKpis(rows);
-
-    if (performancePeriodChartInstance) {
-        performancePeriodChartInstance.destroy();
-    }
-
-    Chart.defaults.color = '#94a3b8';
-    Chart.defaults.font.family = "'Noto Sans KR', 'Inter', sans-serif";
-
-    performancePeriodChartInstance = new Chart(canvas.getContext('2d'), {
-        data: {
-            labels,
-            datasets: [
-                {
-                    type: 'bar',
-                    label: '현금흐름',
-                    data: netCashflow,
-                    backgroundColor: (context) => {
-                        const value = context.raw || 0;
-                        return value >= 0 ? 'rgba(16, 185, 129, 0.28)' : 'rgba(239, 68, 68, 0.24)';
-                    },
-                    borderColor: (context) => {
-                        const value = context.raw || 0;
-                        return value >= 0 ? 'rgba(16, 185, 129, 0.75)' : 'rgba(239, 68, 68, 0.72)';
-                    },
-                    borderWidth: 1,
-                    yAxisID: 'money',
-                },
-                {
-                    type: 'line',
-                    label: '실현손익',
-                    data: realizedPnl,
-                    borderColor: '#f59e0b',
-                    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-                    borderWidth: 2,
-                    pointRadius: 3,
-                    tension: 0.28,
-                    yAxisID: 'money',
-                },
-            ],
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { labels: { color: '#cbd5e1' } },
-                tooltip: {
-                    callbacks: {
-                        label: (context) => `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`,
-                    },
-                },
-            },
-            scales: {
-                x: {
-                    ticks: { color: '#96a4b6', maxRotation: 0, autoSkip: true },
-                    grid: { color: 'rgba(255,255,255,0.05)' },
-                },
-                money: {
-                    ticks: { color: '#96a4b6', callback: (value) => formatCurrency(value) },
-                    grid: { color: 'rgba(255,255,255,0.05)' },
-                },
-            },
-        },
-    });
-}
-
-function renderPerformanceKpis(rows) {
-    const root = document.getElementById('performance-kpis');
-    if (!root) {
-        return;
-    }
-    const totals = rows.reduce((acc, row) => {
-        acc.realizedPnl += Number(row.realized_pnl || 0);
-        acc.buyAmount += Number(row.buy_amount || 0);
-        acc.sellAmount += Number(row.sell_amount || 0);
-        acc.orderCount += Number(row.order_count || 0);
-        return acc;
-    }, { realizedPnl: 0, buyAmount: 0, sellAmount: 0, orderCount: 0 });
-    const pnlClass = totals.realizedPnl > 0 ? 'text-success' : (totals.realizedPnl < 0 ? 'text-danger' : '');
-    const windowLabel = activePerformancePeriod === 'daily' ? '최근 31일' : '최근 12개월';
-    root.innerHTML = `
-        <div class="performance-kpi">
-            <span>${windowLabel} 실현손익</span>
-            <strong class="${pnlClass}">${formatCurrency(totals.realizedPnl)}</strong>
-        </div>
-        <div class="performance-kpi">
-            <span>매수금액</span>
-            <strong>${formatCurrency(totals.buyAmount)}</strong>
-        </div>
-        <div class="performance-kpi">
-            <span>매도금액</span>
-            <strong>${formatCurrency(totals.sellAmount)}</strong>
-        </div>
-        <div class="performance-kpi">
-            <span>거래수</span>
-            <strong>${totals.orderCount.toLocaleString()}건</strong>
-        </div>
-    `;
-}
-
-async function renderPerformancePeriod() {
-    try {
-        const data = await fetchJson('/api/performance/periodic');
-        renderPerformancePeriodChart(data);
-    } catch (err) {
-        console.error('Failed to fetch periodic performance', err);
-        renderPerformancePeriodChart({ daily: [], monthly: [] });
-    }
-}
-
-function bindPerformanceTabs() {
-    document.querySelectorAll('.tab-button[data-period]').forEach((button) => {
-        button.addEventListener('click', () => {
-            activePerformancePeriod = button.dataset.period || 'daily';
-            document.querySelectorAll('.tab-button[data-period]').forEach((node) => {
-                node.classList.toggle('active', node === button);
-            });
-            renderPerformancePeriodChart();
-        });
-    });
-}
-
 async function renderRuntime() {
     const health = await fetchJson('/api/health');
     const circuit = health.circuit_breaker || {};
-    document.getElementById('runtime-env').textContent = health.trading_env === 'real' ? '실전' : '모의';
-    document.getElementById('runtime-dry-run').innerHTML = health.dry_run ? pill('주문차단', 'warn') : pill('전송허용', 'buy');
-    document.getElementById('runtime-order').innerHTML = health.order_submission_enabled ? pill('API 전송 가능', 'buy') : pill('API 전송 차단', 'warn');
-    document.getElementById('runtime-real').innerHTML = health.real_orders_enabled ? pill('실주문 가능', 'sell') : pill('실주문 차단', 'hold');
+    document.getElementById('runtime-env').textContent = health.trading_env === 'real' ? '?ㅼ쟾' : '紐⑥쓽';
+    document.getElementById('runtime-dry-run').innerHTML = health.dry_run ? pill('二쇰Ц李⑤떒', 'warn') : pill('?꾩넚?덉슜', 'buy');
+    document.getElementById('runtime-order').innerHTML = health.order_submission_enabled ? pill('API ?꾩넚 媛??, 'buy') : pill('API ?꾩넚 李⑤떒', 'warn');
+    document.getElementById('runtime-real').innerHTML = health.real_orders_enabled ? pill('?ㅼ＜臾?媛??, 'sell') : pill('?ㅼ＜臾?李⑤떒', 'hold');
     document.getElementById('runtime-circuit').innerHTML = circuit.opened
-        ? pill(`차단 ${circuit.retry_after_seconds || 0}초`, 'sell')
-        : pill(`정상 ${circuit.error_count || 0}/${circuit.max_errors || 5}`, 'buy');
-    autoApprovalEnabled = Boolean(health.auto_approval_enabled);
-    const autoApprovalEl = document.getElementById('runtime-auto-approval');
-    const autoApprovalButton = document.getElementById('btn-auto-approval');
-    if (autoApprovalEl) {
-        autoApprovalEl.innerHTML = autoApprovalEnabled ? pill('ON', 'sell') : pill('OFF', 'hold');
-    }
-    if (autoApprovalButton) {
-        autoApprovalButton.textContent = autoApprovalEnabled ? '끄기' : '켜기';
-    }
+        ? pill(`李⑤떒 ${circuit.retry_after_seconds || 0}珥?, 'sell')
+        : pill(`?뺤긽 ${circuit.error_count || 0}/${circuit.max_errors || 5}`, 'buy');
         
     const btnSyncTrades = document.getElementById('btn-sync-trades');
     if (btnSyncTrades) {
         if (health.dry_run) {
             btnSyncTrades.disabled = true;
-            btnSyncTrades.textContent = '동기화 불가 (모의 실행)';
-            btnSyncTrades.title = '모의 실행(DRY_RUN) 중에는 증권사 실계좌와 동기화할 수 없습니다.';
+            btnSyncTrades.textContent = '?숆린??遺덇? (紐⑥쓽 ?ㅽ뻾)';
+            btnSyncTrades.title = '紐⑥쓽 ?ㅽ뻾(DRY_RUN) 以묒뿉??利앷텒???ㅺ퀎醫뚯? ?숆린?뷀븷 ???놁뒿?덈떎.';
         } else {
             btnSyncTrades.disabled = false;
-            btnSyncTrades.textContent = '증권사 기록 동기화';
+            btnSyncTrades.textContent = '利앷텒??湲곕줉 ?숆린??;
             btnSyncTrades.title = '';
         }
     }
@@ -557,27 +406,12 @@ async function resetCircuitBreaker() {
     setButtonBusy('btn-reset-circuit', true);
     try {
         await postJson('/api/circuit-breaker/reset', {});
-        setStatus('API 차단기를 초기화했습니다. 계좌 정보를 다시 불러옵니다.', true);
+        setStatus('API 李⑤떒湲곕? 珥덇린?뷀뻽?듬땲?? 怨꾩쥖 ?뺣낫瑜??ㅼ떆 遺덈윭?듬땲??', true);
         await Promise.all([renderRuntime(), renderBalance()]);
     } catch (err) {
-        setStatus(`API 차단기 초기화 실패: ${err.message}`);
+        setStatus(`API 李⑤떒湲?珥덇린???ㅽ뙣: ${err.message}`);
     } finally {
         setButtonBusy('btn-reset-circuit', false);
-    }
-}
-
-async function toggleAutoApproval() {
-    const next = !autoApprovalEnabled;
-    setButtonBusy('btn-auto-approval', true);
-    try {
-        const result = await postJson('/api/auto-approval', { enabled: next });
-        autoApprovalEnabled = Boolean(result.enabled);
-        setStatus(`자동승인을 ${autoApprovalEnabled ? '켰습니다. 승인 대기 주문은 생성 즉시 승인 처리됩니다.' : '껐습니다. 주문은 승인 대기에만 등록됩니다.'}`, true);
-        await renderRuntime();
-    } catch (err) {
-        setStatus(`자동승인 전환 실패: ${err.message}`);
-    } finally {
-        setButtonBusy('btn-auto-approval', false);
     }
 }
 
@@ -585,18 +419,18 @@ async function renderConfig() {
     const config = await fetchJson('/api/config');
     latestConfig = config;
     const items = [
-        ['분할 횟수', `${config.split_n}회`],
-        ['손절 기준', `${config.stop_loss_pct}%`],
-        ['익절 기준', `${config.take_profit}%`],
-        ['RSI 매수선', config.rsi_buy],
-        ['RSI 매도선', config.rsi_sell],
-        ['기준 자본', formatCurrency(config.total_capital)],
-        ['최대 보유종목', `${config.max_positions}개`],
-        ['종목당 최대비중', `${formatNumber(config.max_single_weight * 100, 1)}%`],
-        ['현금 보유비중', `${formatNumber(config.cash_buffer * 100, 1)}%`],
-        ['일 손실 제한', `${config.max_daily_loss_pct}%`],
-        ['관심종목', `${config.watchlist.length}개`],
-        ['전략 묶음', `${(config.strategy_sources || []).length}개`],
+        ['遺꾪븷 ?잛닔', `${config.split_n}??],
+        ['?먯젅 湲곗?', `${config.stop_loss_pct}%`],
+        ['?듭젅 湲곗?', `${config.take_profit}%`],
+        ['RSI 留ㅼ닔??, config.rsi_buy],
+        ['RSI 留ㅻ룄??, config.rsi_sell],
+        ['湲곗? ?먮낯', formatCurrency(config.total_capital)],
+        ['理쒕? 蹂댁쑀醫낅ぉ', `${config.max_positions}媛?],
+        ['醫낅ぉ??理쒕?鍮꾩쨷', `${formatNumber(config.max_single_weight * 100, 1)}%`],
+        ['?꾧툑 蹂댁쑀鍮꾩쨷', `${formatNumber(config.cash_buffer * 100, 1)}%`],
+        ['???먯떎 ?쒗븳', `${config.max_daily_loss_pct}%`],
+        ['愿?ъ쥌紐?, `${config.watchlist.length}媛?],
+        ['?꾨왂 臾띠쓬', `${(config.strategy_sources || []).length}媛?],
     ];
     document.getElementById('settings-grid').innerHTML = items.map(([label, value]) => `
         <div class="setting-item">
@@ -604,109 +438,6 @@ async function renderConfig() {
             <strong>${escapeHtml(value)}</strong>
         </div>
     `).join('');
-}
-
-function buildEnvControl(field) {
-    const key = escapeHtml(field.key);
-    const label = escapeHtml(field.label || field.key);
-    const value = field.secret ? '' : escapeHtml(field.value || '');
-    const hint = field.secret && field.has_value
-        ? `현재 값: ${escapeHtml(field.masked || '저장됨')}`
-        : (field.secret ? '새 값을 입력한 경우에만 변경됩니다.' : '');
-
-    if (field.type === 'bool') {
-        const selected = String(field.value || '').toLowerCase() === 'true';
-        return `
-            <div class="env-field">
-                <label for="env-${key}">${label}</label>
-                <select id="env-${key}" data-env-key="${key}" data-original="${escapeHtml(field.value || '')}">
-                    <option value="true" ${selected ? 'selected' : ''}>true</option>
-                    <option value="false" ${!selected ? 'selected' : ''}>false</option>
-                </select>
-                <small>${hint}</small>
-            </div>
-        `;
-    }
-
-    if (field.type === 'select') {
-        const options = (field.options || []).map((option) => {
-            const selected = String(field.value || '') === String(option);
-            return `<option value="${escapeHtml(option)}" ${selected ? 'selected' : ''}>${escapeHtml(option)}</option>`;
-        }).join('');
-        return `
-            <div class="env-field">
-                <label for="env-${key}">${label}</label>
-                <select id="env-${key}" data-env-key="${key}" data-original="${escapeHtml(field.value || '')}">
-                    ${options}
-                </select>
-                <small>${hint}</small>
-            </div>
-        `;
-    }
-
-    const inputType = field.type === 'secret' ? 'password' : (field.type === 'int' || field.type === 'float' ? 'number' : 'text');
-    const step = field.type === 'float' ? ' step="any"' : '';
-    const placeholder = field.secret ? escapeHtml(field.masked || '새 값 입력') : '';
-    return `
-        <div class="env-field">
-            <label for="env-${key}">${label}</label>
-            <input id="env-${key}" type="${inputType}"${step} value="${value}" placeholder="${placeholder}"
-                data-env-key="${key}" data-original="${value}" autocomplete="off">
-            <small>${hint}</small>
-        </div>
-    `;
-}
-
-async function renderEnvSettings() {
-    try {
-        const data = await fetchJson('/api/env');
-        const root = document.getElementById('env-grid');
-        if (!root) {
-            return;
-        }
-        root.innerHTML = (data.fields || []).map(buildEnvControl).join('');
-        const meta = document.getElementById('env-meta');
-        if (meta) {
-            meta.textContent = `${data.path || '.env'} · 저장 후 서버 재시작 필요`;
-        }
-    } catch (err) {
-        setStatus(`환경설정 불러오기 실패: ${err.message}`);
-    }
-}
-
-async function saveEnvSettings(event) {
-    event.preventDefault();
-    const values = {};
-    document.querySelectorAll('[data-env-key]').forEach((input) => {
-        const key = input.dataset.envKey;
-        const original = input.dataset.original || '';
-        const value = input.value;
-        if (input.type === 'password') {
-            if (value.trim()) {
-                values[key] = value;
-            }
-            return;
-        }
-        if (value !== original) {
-            values[key] = value;
-        }
-    });
-
-    if (!Object.keys(values).length) {
-        setStatus('변경된 환경설정이 없습니다.', true);
-        return;
-    }
-
-    setButtonBusy('btn-env-save', true);
-    try {
-        const result = await postJson('/api/env', { values });
-        await renderEnvSettings();
-        setStatus(`환경설정을 저장했습니다: ${result.updated.join(', ')}. 서버를 재시작해야 적용됩니다.`, true);
-    } catch (err) {
-        setStatus(`환경설정 저장 실패: ${err.message}`);
-    } finally {
-        setButtonBusy('btn-env-save', false);
-    }
 }
 
 function renderRisk(balance) {
@@ -733,7 +464,7 @@ function renderRisk(balance) {
     document.getElementById('risk-exposure').textContent = formatCurrency(exposure);
     document.getElementById('risk-cash-ratio').textContent = `${formatNumber(cashRatio * 100, 1)}%`;
     document.getElementById('risk-concentration').textContent = `${formatNumber(concentration * 100, 1)}%`;
-    document.getElementById('risk-loss-usage').textContent = lossUsage > 0 ? `${formatNumber(lossUsage, 1)}% 사용` : '정상';
+    document.getElementById('risk-loss-usage').textContent = lossUsage > 0 ? `${formatNumber(lossUsage, 1)}% ?ъ슜` : '?뺤긽';
 }
 
 async function renderBalance() {
@@ -747,23 +478,17 @@ async function renderBalance() {
             : Number(balance.total_eval || 0);
 
         document.getElementById('val-total').textContent = formatCurrency(displayTotal);
-        const principal = Number(latestConfig?.total_capital || 0);
-        document.getElementById('val-principal').textContent = principal > 0 ? formatCurrency(principal) : '-';
         document.getElementById('val-cash').textContent = formatCurrency(balance.cash);
+        document.getElementById('val-holdings').textContent = balance.holdings.length;
 
         const pnlEl = document.getElementById('val-pnl');
         pnlEl.textContent = formatCurrency(balance.pnl);
         pnlEl.className = `value ${balance.pnl >= 0 ? 'text-success' : 'text-danger'}`;
 
-        const returnEl = document.getElementById('val-return');
-        const returnPct = principal > 0 ? Number(balance.pnl || 0) / principal * 100 : 0;
-        returnEl.textContent = principal > 0 ? formatPercent(returnPct) : '-';
-        returnEl.className = `value ${returnPct >= 0 ? 'text-success' : 'text-danger'}`;
-
         const tbodyHoldings = document.querySelector('#table-holdings tbody');
         tbodyHoldings.innerHTML = '';
 
-        const chartLabels = ['현금'];
+        const chartLabels = ['?꾧툑'];
         const chartData = [balance.cash];
         const chartColors = ['rgba(148, 163, 184, 0.7)'];
         const colors = [
@@ -776,13 +501,11 @@ async function renderBalance() {
         ];
 
         if (!balance.holdings.length) {
-            setTableMessage('#table-holdings tbody', 7, '보유 종목이 없습니다');
+            setTableMessage('#table-holdings tbody', 5, '蹂댁쑀 醫낅ぉ???놁뒿?덈떎');
         }
 
         balance.holdings.forEach((holding, idx) => {
             const rtClass = holding.rt >= 0 ? 'text-success' : 'text-danger';
-            const evalAmount = Number(holding.value || (Number(holding.qty || 0) * Number(holding.price || 0)));
-            const sellReason = `manual sell from holdings; return=${formatNumber(holding.rt, 2)}%; pnl=${Number(holding.pnl || 0)}`;
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>
@@ -791,31 +514,8 @@ async function renderBalance() {
                 </td>
                 <td>${Number(holding.qty).toLocaleString()}</td>
                 <td>${formatCurrency(holding.price)}</td>
-                <td>${formatCurrency(evalAmount)}</td>
                 <td class="${rtClass}">${formatPercent(holding.rt)}</td>
                 <td class="${rtClass}">${formatCurrency(holding.pnl)}</td>
-                <td>
-                    <div class="sell-controls">
-                        <input class="sell-qty-input" type="number" min="1" max="${Number(holding.qty || 0)}"
-                            value="${Number(holding.qty || 0)}" aria-label="${escapeHtml(holding.name)} 매도 수량">
-                        <div class="button-row">
-                            <button type="button" class="button-danger queue-partial-sell"
-                                data-symbol="${escapeHtml(holding.symbol)}"
-                                data-name="${escapeHtml(holding.name)}"
-                                data-max-qty="${Number(holding.qty || 0)}"
-                                data-price="${Number(holding.price || 0)}"
-                                data-reason="${escapeHtml(sellReason)}"
-                                data-source="manual-holdings">부분매도</button>
-                            <button type="button" class="button-danger queue-full-sell"
-                                data-symbol="${escapeHtml(holding.symbol)}"
-                                data-name="${escapeHtml(holding.name)}"
-                                data-qty="${Number(holding.qty || 0)}"
-                                data-price="${Number(holding.price || 0)}"
-                                data-reason="${escapeHtml(sellReason)}"
-                                data-source="manual-holdings">전량</button>
-                        </div>
-                    </div>
-                </td>
             `;
             tbodyHoldings.appendChild(tr);
 
@@ -825,44 +525,42 @@ async function renderBalance() {
         });
 
         renderPortfolioChart(chartLabels, chartData, chartColors);
-        bindQueueButtons();
         renderRisk(balance);
-        document.getElementById('last-updated').textContent = `마지막 갱신 ${new Date().toLocaleTimeString('ko-KR')}`;
+        document.getElementById('last-updated').textContent = `留덉?留?媛깆떊 ${new Date().toLocaleTimeString('ko-KR')}`;
         if (balance._cache?.stale) {
-            setStatus(`KIS 계좌 API가 일시 실패해 최근 정상 데이터(${balance._cache.cached_at || '저장됨'})를 표시합니다.`);
+            setStatus(`KIS 怨꾩쥖 API媛 ?쇱떆 ?ㅽ뙣??理쒓렐 ?뺤긽 ?곗씠??${balance._cache.cached_at || '??λ맖'})瑜??쒖떆?⑸땲??`);
         } else {
-            setStatus('대시보드 연결 완료. 계좌 정보를 불러왔습니다.', true);
+            setStatus('??쒕낫???곌껐 ?꾨즺. 怨꾩쥖 ?뺣낫瑜?遺덈윭?붿뒿?덈떎.', true);
         }
     } catch (err) {
         console.error('Failed to fetch balance data', err);
-        document.getElementById('val-total').textContent = '불러오기 실패';
-        document.getElementById('val-principal').textContent = '-';
-        document.getElementById('val-cash').textContent = '불러오기 실패';
-        document.getElementById('val-pnl').textContent = '불러오기 실패';
-        document.getElementById('val-return').textContent = '-';
-        setStatus(`계좌 API 오류: ${err.message}`);
-        setTableMessage('#table-holdings tbody', 7, err.message);
+        document.getElementById('val-total').textContent = '遺덈윭?ㅺ린 ?ㅽ뙣';
+        document.getElementById('val-cash').textContent = '遺덈윭?ㅺ린 ?ㅽ뙣';
+        document.getElementById('val-pnl').textContent = '遺덈윭?ㅺ린 ?ㅽ뙣';
+        document.getElementById('val-holdings').textContent = '-';
+        setStatus(`怨꾩쥖 API ?ㅻ쪟: ${err.message}`);
+        setTableMessage('#table-holdings tbody', 5, err.message);
     }
 }
 
 async function renderOptimizer() {
     setButtonBusy('btn-optimizer', true);
-    setTableMessage('#table-optimizer tbody', 7, '포트폴리오 최적 비중을 계산하고 있습니다...');
+    setTableMessage('#table-optimizer tbody', 7, '?ы듃?대━??理쒖쟻 鍮꾩쨷??怨꾩궛?섍퀬 ?덉뒿?덈떎...');
     try {
         const data = await fetchJson('/api/portfolio-optimizer');
         const tbody = document.querySelector('#table-optimizer tbody');
         tbody.innerHTML = '';
         if (!data.positions.length) {
-            setTableMessage('#table-optimizer tbody', 7, '계산할 보유 종목이 없습니다');
+            setTableMessage('#table-optimizer tbody', 7, '怨꾩궛??蹂댁쑀 醫낅ぉ???놁뒿?덈떎');
             return;
         }
 
         data.positions.forEach((row) => {
             const action = String(row.rebalance_action || 'hold').toLowerCase();
             const kind = action === 'buy' ? 'buy' : (action === 'sell' ? 'sell' : 'hold');
-            const reason = `포트폴리오 목표비중 ${formatNumber(row.target_weight * 100, 1)}%; 점수=${formatNumber(row.score, 1)}, 변동성=${formatNumber(row.volatility * 100, 1)}%`;
+            const reason = `?ы듃?대━??紐⑺몴鍮꾩쨷 ${formatNumber(row.target_weight * 100, 1)}%; ?먯닔=${formatNumber(row.score, 1)}, 蹂?숈꽦=${formatNumber(row.volatility * 100, 1)}%`;
             const queueButton = action === 'hold'
-                ? `<button type="button" class="button-ghost" disabled title="비중 유지 상태이므로 주문할 내역이 없습니다." style="opacity:0.3; cursor:not-allowed;">변경없음</button>`
+                ? `<button type="button" class="button-ghost" disabled title="鍮꾩쨷 ?좎? ?곹깭?대?濡?二쇰Ц???댁뿭???놁뒿?덈떎." style="opacity:0.3; cursor:not-allowed;">蹂寃쎌뾾??/button>`
                 : `<button type="button" class="button-ghost queue-order"
                     data-symbol="${escapeHtml(row.symbol)}"
                     data-name="${escapeHtml(row.name)}"
@@ -870,7 +568,7 @@ async function renderOptimizer() {
                     data-qty="${Number(row.rebalance_qty || 0)}"
                     data-price="${Number(row.price || 0)}"
                     data-reason="${escapeHtml(reason)}"
-                    data-source="portfolio-optimizer">승인대기</button>`;
+                    data-source="portfolio-optimizer">?뱀씤?湲?/button>`;
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>
@@ -896,13 +594,13 @@ async function renderOptimizer() {
 
 async function renderSignals() {
     setButtonBusy('btn-signals', true);
-    setTableMessage('#table-signals tbody', 7, '보유 종목을 진단하고 있습니다...');
+    setTableMessage('#table-signals tbody', 7, '蹂댁쑀 醫낅ぉ??吏꾨떒?섍퀬 ?덉뒿?덈떎...');
     try {
         const data = await fetchJson('/api/signals');
         const tbody = document.querySelector('#table-signals tbody');
         tbody.innerHTML = '';
         if (!data.signals.length) {
-            setTableMessage('#table-signals tbody', 7, '보유 종목이 없습니다');
+            setTableMessage('#table-signals tbody', 7, '蹂댁쑀 醫낅ぉ???놁뒿?덈떎');
             return;
         }
 
@@ -910,7 +608,7 @@ async function renderSignals() {
             const action = String(row.action || 'hold').toLowerCase();
             const kind = action === 'buy' ? 'buy' : (action === 'sell' ? 'sell' : 'hold');
             const queueButton = action === 'hold'
-                ? `<button type="button" class="button-ghost" disabled title="관망 신호이므로 주문할 내역이 없습니다." style="opacity:0.3; cursor:not-allowed;">보유(관망)</button>`
+                ? `<button type="button" class="button-ghost" disabled title="愿留??좏샇?대?濡?二쇰Ц???댁뿭???놁뒿?덈떎." style="opacity:0.3; cursor:not-allowed;">蹂댁쑀(愿留?</button>`
                 : `<button type="button" class="button-ghost queue-order"
                     data-symbol="${escapeHtml(row.symbol)}"
                     data-name="${escapeHtml(row.name)}"
@@ -918,7 +616,7 @@ async function renderSignals() {
                     data-qty="${Number(row.signal_qty || 0)}"
                     data-price="${Number(row.signal_price || 0)}"
                     data-reason="${escapeHtml(row.reason)}"
-                    data-source="signal">승인대기</button>`;
+                    data-source="signal">?뱀씤?湲?/button>`;
             const reason = translateReason(row.reason);
             const tr = document.createElement('tr');
             tr.innerHTML = `
@@ -948,7 +646,7 @@ async function renderSignals() {
 
 async function renderCandidates() {
     setButtonBusy('btn-candidates', true);
-    setTableMessage('#table-candidates tbody', 8, '관심종목에서 매수 후보를 찾고 있습니다...');
+    setTableMessage('#table-candidates tbody', 8, '愿?ъ쥌紐⑹뿉??留ㅼ닔 ?꾨낫瑜?李얘퀬 ?덉뒿?덈떎...');
     try {
         const data = await fetchJson('/api/candidates?min_score=2');
         const tbody = document.querySelector('#table-candidates tbody');
@@ -957,28 +655,28 @@ async function renderCandidates() {
             const scanned = data.scanned || 0;
             const scanError = data.scan_error || null;
             const tableMsg = scanned === 0
-                ? (scanError ? `데이터 수신 실패 — 잠시 후 다시 시도해 주세요` : '분석 대상 종목이 없습니다')
-                : `조건을 만족한 후보가 없습니다 — ${scanned}종목 분석 완료`;
+                ? (scanError ? `?곗씠???섏떊 ?ㅽ뙣 ???좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭?? : '遺꾩꽍 ???醫낅ぉ???놁뒿?덈떎')
+                : `議곌굔??留뚯”???꾨낫媛 ?놁뒿?덈떎 ??${scanned}醫낅ぉ 遺꾩꽍 ?꾨즺`;
             setTableMessage('#table-candidates tbody', 8, tableMsg);
-            // 분석 근거 팝업
+            // 遺꾩꽍 洹쇨굅 ?앹뾽
             const titleEl = document.getElementById('noCandidatesTitle');
             const subtitleEl = document.getElementById('noCandidatesSubtitle');
             const bodyEl = document.getElementById('noCandidatesBody');
             if (scanned === 0 && scanError) {
-                if (titleEl) titleEl.textContent = '⚠️ 데이터 수신 실패';
-                if (subtitleEl) subtitleEl.textContent = '시세 데이터를 가져오지 못해 분석을 진행할 수 없었습니다.';
+                if (titleEl) titleEl.textContent = '?좑툘 ?곗씠???섏떊 ?ㅽ뙣';
+                if (subtitleEl) subtitleEl.textContent = '?쒖꽭 ?곗씠?곕? 媛?몄삤吏 紐삵빐 遺꾩꽍??吏꾪뻾?????놁뿀?듬땲??';
                 if (bodyEl) bodyEl.innerHTML = buildScanErrorModalMarkup(scanError);
             } else {
-                if (titleEl) titleEl.textContent = '📊 매수 후보 없음 — 분석 결과';
+                if (titleEl) titleEl.textContent = '?뱤 留ㅼ닔 ?꾨낫 ?놁쓬 ??遺꾩꽍 寃곌낵';
                 if (subtitleEl) subtitleEl.textContent =
-                    `${scanned}종목을 분석했으나 기준 점수(${data.min_score || 2}점) 이상인 종목이 없습니다.`;
+                    `${scanned}醫낅ぉ??遺꾩꽍?덉쑝??湲곗? ?먯닔(${data.min_score || 2}?? ?댁긽??醫낅ぉ???놁뒿?덈떎.`;
                 if (bodyEl) bodyEl.innerHTML = buildNoCandidatesModalMarkup(data);
             }
             setNoCandidatesModalOpen(true);
             if (data._cache?.cached_at) {
-                setStatus(`최근 후보 검색 결과를 표시합니다. 기준 시각 ${data._cache.cached_at}`, true);
+                setStatus(`理쒓렐 ?꾨낫 寃??寃곌낵瑜??쒖떆?⑸땲?? 湲곗? ?쒓컖 ${data._cache.cached_at}`, true);
             } else {
-                setStatus('분석 완료 — 매수 기준을 충족하는 종목이 없습니다.', true);
+                setStatus('遺꾩꽍 ?꾨즺 ??留ㅼ닔 湲곗???異⑹”?섎뒗 醫낅ぉ???놁뒿?덈떎.', true);
             }
             return;
         }
@@ -994,25 +692,25 @@ async function renderCandidates() {
                     data-qty="${Number(row.planned_qty || 0)}"
                     data-price="${Number(row.limit_price || row.current_price || 0)}"
                     data-reason="${escapeHtml((row.reasons || []).join(', '))}"
-                    data-source="candidate">승인대기</button>`
-                : `<button type="button" class="button-ghost" disabled title="잔고 부족 또는 최대 보유 종목 수(MAX_POSITIONS) 초과로 매수할 수 없습니다." style="opacity:0.5; cursor:not-allowed;">승인불가</button>`;
+                    data-source="candidate">?뱀씤?湲?/button>`
+                : `<button type="button" class="button-ghost" disabled title="?붽퀬 遺議??먮뒗 理쒕? 蹂댁쑀 醫낅ぉ ??MAX_POSITIONS) 珥덇낵濡?留ㅼ닔?????놁뒿?덈떎." style="opacity:0.5; cursor:not-allowed;">?뱀씤遺덇?</button>`;
 
-            // 상세 근거 빌드
+            // ?곸꽭 洹쇨굅 鍮뚮뱶
             const reasonLines = (row.reasons || []).map(r => strategyReasonLabel(r));
             const detailParts = [];
             if (row.rsi != null) detailParts.push(`RSI ${formatNumber(row.rsi,1)}`);
             if (row.rsi2 != null) detailParts.push(`RSI2 ${formatNumber(row.rsi2,1)}`);
             if (row.macd_hist != null) detailParts.push(`MACD ${formatNumber(row.macd_hist,2)}`);
             if (row.sma20 != null && row.sma60 != null) {
-                const trend = row.sma20 > row.sma60 ? '단기↑중기선 위' : '단기↓중기선 아래';
+                const trend = row.sma20 > row.sma60 ? '?④린?묒쨷湲곗꽑 ?? : '?④린?볦쨷湲곗꽑 ?꾨옒';
                 detailParts.push(trend);
             }
             if (row.bb_lo != null && row.current_price != null) {
                 const bbDist = ((row.current_price - row.bb_lo) / row.bb_lo * 100).toFixed(1);
-                detailParts.push(`볼밴하단+${bbDist}%`);
+                detailParts.push(`蹂쇰객?섎떒+${bbDist}%`);
             }
             const detailSuffix = detailParts.length ? ` (${detailParts.join(' | ')})` : '';
-            const reasonText = reasonLines.join(' · ') + detailSuffix;
+            const reasonText = reasonLines.join(' 쨌 ') + detailSuffix;
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
@@ -1035,204 +733,9 @@ async function renderCandidates() {
         });
         bindQueueButtons();
         if (data._cache?.cached_at) {
-            setStatus(`최근 후보 검색 결과를 표시합니다. 기준 시각 ${data._cache.cached_at}`, true);
+            setStatus(`理쒓렐 ?꾨낫 寃??寃곌낵瑜??쒖떆?⑸땲?? 湲곗? ?쒓컖 ${data._cache.cached_at}`, true);
         } else {
-            setStatus('매수 후보 검색을 완료했습니다.', true);
-        }
-    } catch (err) {
-        setTableMessage('#table-candidates tbody', 8, err.message);
-    } finally {
-        setButtonBusy('btn-candidates', false);
-    try {
-        const data = await fetchJson('/api/portfolio-optimizer');
-        const tbody = document.querySelector('#table-optimizer tbody');
-        tbody.innerHTML = '';
-        if (!data.positions.length) {
-            setTableMessage('#table-optimizer tbody', 7, '계산할 보유 종목이 없습니다');
-            return;
-        }
-
-        data.positions.forEach((row) => {
-            const action = String(row.rebalance_action || 'hold').toLowerCase();
-            const kind = action === 'buy' ? 'buy' : (action === 'sell' ? 'sell' : 'hold');
-            const reason = `포트폴리오 목표비중 ${formatNumber(row.target_weight * 100, 1)}%; 점수=${formatNumber(row.score, 1)}, 변동성=${formatNumber(row.volatility * 100, 1)}%`;
-            const queueButton = action === 'hold'
-                ? `<button type="button" class="button-ghost" disabled title="비중 유지 상태이므로 주문할 내역이 없습니다." style="opacity:0.3; cursor:not-allowed;">변경없음</button>`
-                : `<button type="button" class="button-ghost queue-order"
-                    data-symbol="${escapeHtml(row.symbol)}"
-                    data-name="${escapeHtml(row.name)}"
-                    data-action="${escapeHtml(action)}"
-                    data-qty="${Number(row.rebalance_qty || 0)}"
-                    data-price="${Number(row.price || 0)}"
-                    data-reason="${escapeHtml(reason)}"
-                    data-source="portfolio-optimizer">승인대기</button>`;
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>
-                    <div class="symbol-name">${escapeHtml(row.name)}</div>
-                    <div class="symbol-code">${escapeHtml(row.symbol)}</div>
-                </td>
-                <td>${pill(formatNumber(row.score, 1), Number(row.score || 0) >= 3 ? 'buy' : 'hold')}</td>
-                <td>${formatNumber(row.volatility * 100, 1)}%</td>
-                <td>${formatNumber(row.current_weight * 100, 1)}%</td>
-                <td>${formatNumber(row.target_weight * 100, 1)}%</td>
-                <td>${pill(toKorAction(action), kind)}</td>
-                <td>${queueButton}</td>
-            `;
-            tbody.appendChild(tr);
-        });
-        bindQueueButtons();
-    } catch (err) {
-        setTableMessage('#table-optimizer tbody', 7, err.message);
-    } finally {
-        setButtonBusy('btn-optimizer', false);
-    }
-}
-
-async function renderSignals() {
-    setButtonBusy('btn-signals', true);
-    setTableMessage('#table-signals tbody', 7, '보유 종목을 진단하고 있습니다...');
-    try {
-        const data = await fetchJson('/api/signals');
-        const tbody = document.querySelector('#table-signals tbody');
-        tbody.innerHTML = '';
-        if (!data.signals.length) {
-            setTableMessage('#table-signals tbody', 7, '보유 종목이 없습니다');
-            return;
-        }
-
-        data.signals.forEach((row) => {
-            const action = String(row.action || 'hold').toLowerCase();
-            const kind = action === 'buy' ? 'buy' : (action === 'sell' ? 'sell' : 'hold');
-            const queueButton = action === 'hold'
-                ? `<button type="button" class="button-ghost" disabled title="관망 신호이므로 주문할 내역이 없습니다." style="opacity:0.3; cursor:not-allowed;">보유(관망)</button>`
-                : `<button type="button" class="button-ghost queue-order"
-                    data-symbol="${escapeHtml(row.symbol)}"
-                    data-name="${escapeHtml(row.name)}"
-                    data-action="${escapeHtml(action)}"
-                    data-qty="${Number(row.signal_qty || 0)}"
-                    data-price="${Number(row.signal_price || 0)}"
-                    data-reason="${escapeHtml(row.reason)}"
-                    data-source="signal">승인대기</button>`;
-            const reason = translateReason(row.reason);
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>
-                    <div class="symbol-name">${escapeHtml(row.name)}</div>
-                    <div class="symbol-code">${escapeHtml(row.symbol)}</div>
-                </td>
-                <td>${pill(toKorAction(action), kind)}</td>
-                <td>${pill(formatNumber(row.strategy_score), Number(row.strategy_score || 0) >= 5 ? 'buy' : 'hold')}</td>
-                <td>${Number(row.signal_qty || 0).toLocaleString()}</td>
-                <td>${formatNumber(row.rsi, 1)} / ${formatNumber(row.rsi2, 1)}</td>
-                <td>${formatNumber(row.macd_hist, 2)}</td>
-                <td>
-                    <div class="reason-cell" title="${escapeHtml(reason)}">${escapeHtml(reason)}</div>
-                    ${queueButton}
-                </td>
-            `;
-            tbody.appendChild(tr);
-        });
-        bindQueueButtons();
-    } catch (err) {
-        setTableMessage('#table-signals tbody', 7, err.message);
-    } finally {
-        setButtonBusy('btn-signals', false);
-    }
-}
-
-async function renderCandidates() {
-    setButtonBusy('btn-candidates', true);
-    setTableMessage('#table-candidates tbody', 8, '관심종목에서 매수 후보를 찾고 있습니다...');
-    try {
-        const data = await fetchJson('/api/candidates?min_score=2');
-        const tbody = document.querySelector('#table-candidates tbody');
-        tbody.innerHTML = '';
-        if (!data.candidates.length) {
-            const scanned = data.scanned || 0;
-            const scanError = data.scan_error || null;
-            const tableMsg = scanned === 0
-                ? (scanError ? `데이터 수신 실패 — 잠시 후 다시 시도해 주세요` : '분석 대상 종목이 없습니다')
-                : `조건을 만족한 후보가 없습니다 — ${scanned}종목 분석 완료`;
-            setTableMessage('#table-candidates tbody', 8, tableMsg);
-            // 분석 근거 팝업
-            const titleEl = document.getElementById('noCandidatesTitle');
-            const subtitleEl = document.getElementById('noCandidatesSubtitle');
-            const bodyEl = document.getElementById('noCandidatesBody');
-            if (scanned === 0 && scanError) {
-                if (titleEl) titleEl.textContent = '⚠️ 데이터 수신 실패';
-                if (subtitleEl) titleEl.textContent = '시세 데이터를 가져오지 못해 분석을 진행할 수 없었습니다.';
-                if (bodyEl) bodyEl.innerHTML = buildScanErrorModalMarkup(scanError);
-            } else {
-                if (titleEl) titleEl.textContent = '📊 매수 후보 없음 — 분석 결과';
-                if (subtitleEl) titleEl.textContent =
-                    `${scanned}종목을 분석했으나 기준 점수(${data.min_score || 2}점) 이상인 종목이 없습니다.`;
-                if (bodyEl) bodyEl.innerHTML = buildNoCandidatesModalMarkup(data);
-            }
-            setNoCandidatesModalOpen(true);
-            if (data._cache?.cached_at) {
-                setStatus(`최근 후보 검색 결과를 표시합니다. 기준 시각 ${data._cache.cached_at}`, true);
-            } else {
-                setStatus('분석 완료 — 매수 기준을 충족하는 종목이 없습니다.', true);
-            }
-            return;
-        }
-
-        const displayedCandidates = data.candidates.slice(0, 10);
-        displayedCandidates.forEach((row) => {
-            const stockName = row.name && row.name !== row.ticker ? row.name : '';
-            const queueButton = Number(row.planned_qty || 0) > 0
-                ? `<button type="button" class="button-ghost queue-order"
-                    data-symbol="${escapeHtml(row.ticker)}"
-                    data-name="${escapeHtml(row.name || row.ticker)}"
-                    data-action="buy"
-                    data-qty="${Number(row.planned_qty || 0)}"
-                    data-price="${Number(row.limit_price || row.current_price || 0)}"
-                    data-reason="${escapeHtml((row.reasons || []).join(', '))}"
-                    data-source="candidate">승인대기</button>`
-                : `<button type="button" class="button-ghost" disabled title="잔고 부족 또는 최대 보유 종목 수(MAX_POSITIONS) 초과로 매수할 수 없습니다." style="opacity:0.5; cursor:not-allowed;">승인불가</button>`;
-
-            // 상세 근거 빌드
-            const reasonLines = (row.reasons || []).map(r => strategyReasonLabel(r));
-            const detailParts = [];
-            if (row.rsi != null) detailParts.push(`RSI ${formatNumber(row.rsi,1)}`);
-            if (row.rsi2 != null) detailParts.push(`RSI2 ${formatNumber(row.rsi2,1)}`);
-            if (row.macd_hist != null) detailParts.push(`MACD ${formatNumber(row.macd_hist,2)}`);
-            if (row.sma20 != null && row.sma60 != null) {
-                const trend = row.sma20 > row.sma60 ? '단기↑중기선 위' : '단기↓중기선 아래';
-                detailParts.push(trend);
-            }
-            if (row.bb_lo != null && row.current_price != null) {
-                const bbDist = ((row.current_price - row.bb_lo) / row.bb_lo * 100).toFixed(1);
-                detailParts.push(`볼밴하단+${bbDist}%`);
-            }
-            const detailSuffix = detailParts.length ? ` (${detailParts.join(' | ')})` : '';
-            const reasonText = reasonLines.join(' · ') + detailSuffix;
-
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>
-                    <span class="symbol-name">${escapeHtml(stockName || row.ticker)}</span>
-                    <span class="symbol-code">${stockName ? row.ticker : ''}</span>
-                </td>
-                <td>${pill(row.score, row.score >= 3 ? 'buy' : 'warn')}</td>
-                <td>${formatNumber(row.rsi, 1)} / ${formatNumber(row.rsi2, 1)}</td>
-                <td>${formatNumber(row.macd_hist, 2)}</td>
-                <td>${formatCurrency(row.current_price)}</td>
-                <td>${Number(row.planned_qty || 0).toLocaleString()}</td>
-                <td>${formatCurrency(row.estimated_cost)}</td>
-                <td>
-                    <div class="reason-detail">${escapeHtml(reasonText)}</div>
-                    ${queueButton}
-                </td>
-            `;
-            tbody.appendChild(tr);
-        });
-        bindQueueButtons();
-        if (data._cache?.cached_at) {
-            setStatus(`최근 후보 검색 결과를 표시합니다. 기준 시각 ${data._cache.cached_at}`, true);
-        } else {
-            setStatus('매수 후보 검색을 완료했습니다.', true);
+            setStatus('留ㅼ닔 ?꾨낫 寃?됱쓣 ?꾨즺?덉뒿?덈떎.', true);
         }
     } catch (err) {
         setTableMessage('#table-candidates tbody', 8, err.message);
@@ -1243,20 +746,20 @@ async function renderCandidates() {
 
 async function renderAiAllocation() {
     setButtonBusy('btn-ai-allocation', true);
-    setTableMessage('#table-ai-allocation tbody', 8, 'AI 목표 비중을 계산하고 있습니다...');
+    setTableMessage('#table-ai-allocation tbody', 8, 'AI 紐⑺몴 鍮꾩쨷??怨꾩궛?섍퀬 ?덉뒿?덈떎...');
     try {
         const data = await fetchJson('/api/ai-allocation');
         const tbody = document.querySelector('#table-ai-allocation tbody');
         tbody.innerHTML = '';
         if (!data.positions.length) {
-            setTableMessage('#table-ai-allocation tbody', 8, '계산할 보유 종목이 없습니다');
+            setTableMessage('#table-ai-allocation tbody', 8, '怨꾩궛??蹂댁쑀 醫낅ぉ???놁뒿?덈떎');
             return;
         }
 
         data.positions.forEach((row) => {
             const action = String(row.rebalance_action || 'hold').toLowerCase();
             const kind = action === 'buy' ? 'buy' : (action === 'sell' ? 'sell' : 'hold');
-            const reason = `AI 목표비중 ${formatNumber(row.target_weight * 100, 1)}%; ${translateReason(((row.reasons || []).slice(0, 3)).join(', '))}`;
+            const reason = `AI 紐⑺몴鍮꾩쨷 ${formatNumber(row.target_weight * 100, 1)}%; ${translateReason(((row.reasons || []).slice(0, 3)).join(', '))}`;
             const modalPayload = encodeURIComponent(JSON.stringify({
                 symbol: row.symbol,
                 name: row.name,
@@ -1267,11 +770,11 @@ async function renderAiAllocation() {
                 deltaValue: Number(row.delta_value || 0),
                 volatility: Number(row.volatility || 0),
                 reasoning_kr: row.reasoning_kr || '',
-                ai_strategy_name: row.ai_strategy_name || 'AI 전략 상세',
+                ai_strategy_name: row.ai_strategy_name || 'AI ?꾨왂 ?곸꽭',
                 reasons: Array.isArray(row.reasons) ? row.reasons : []
             }));
             const queueButton = action === 'hold'
-                ? `<button type="button" class="button-ghost" disabled title="AI가 현재 비중을 유지할 것을 권장합니다." style="opacity:0.3; cursor:not-allowed;">유지</button>`
+                ? `<button type="button" class="button-ghost" disabled title="AI媛 ?꾩옱 鍮꾩쨷???좎???寃껋쓣 沅뚯옣?⑸땲??" style="opacity:0.3; cursor:not-allowed;">?좎?</button>`
                 : `<button type="button" class="button-ghost queue-order"
                     data-symbol="${escapeHtml(row.symbol)}"
                     data-name="${escapeHtml(row.name)}"
@@ -1279,7 +782,7 @@ async function renderAiAllocation() {
                     data-qty="${Number(row.rebalance_qty || 0)}"
                     data-price="${Number(row.price || 0)}"
                     data-reason="${escapeHtml(reason)}"
-                    data-source="ai-allocation">승인대기</button>`;
+                    data-source="ai-allocation">?뱀씤?湲?/button>`;
             const tr = document.createElement('tr');
             const aiReasonText = String(row.reasoning_kr || row.reasons?.join(', ') || '-');
             tr.innerHTML = `
@@ -1297,7 +800,7 @@ async function renderAiAllocation() {
                         data-ai-payload="${modalPayload}"
                         data-reason="${escapeHtml(aiReasonText)}"
                         onclick="showAiModal(this)">
-                        ${escapeHtml(row.ai_strategy_name || "전략 상세 내역 보기")}
+                        ${escapeHtml(row.ai_strategy_name || "?꾨왂 ?곸꽭 ?댁뿭 蹂닿린")}
                     </button>
                 </td>
                 <td>${queueButton}</td>
@@ -1312,24 +815,6 @@ async function renderAiAllocation() {
     }
 }
 
-async function createPartialSellFromButton(button) {
-    const row = button.closest('tr');
-    const input = row ? row.querySelector('.sell-qty-input') : null;
-    const maxQty = Number(button.dataset.maxQty || 0);
-    const qty = Number(input?.value || 0);
-
-    if (!Number.isInteger(qty) || qty <= 0) {
-        setStatus('부분매도 수량은 1주 이상 정수로 입력해야 합니다.');
-        return;
-    }
-    if (qty > maxQty) {
-        setStatus(`부분매도 수량은 보유수량 ${maxQty.toLocaleString()}주를 초과할 수 없습니다.`);
-        return;
-    }
-
-    await createSellApproval(button, qty);
-}
-
 async function createApprovalFromButton(button) {
     const payload = {
         symbol: button.dataset.symbol,
@@ -1342,99 +827,38 @@ async function createApprovalFromButton(button) {
     };
     button.disabled = true;
     try {
-        const result = await postJson('/api/approvals', payload);
-        if (autoApprovalEnabled) {
-            const approved = await postJson(`/api/approvals/${result.id}/approve`, {});
-            setStatus(`${toKorAction(payload.action)} ${payload.symbol} ${payload.qty}주 주문을 자동승인 처리했습니다: ${toKorStatus(approved.status)}`, approved.status !== 'failed');
-            await Promise.all([renderApprovals(), renderTrades(), renderBalance()]);
-        } else {
-            setStatus(`${toKorAction(payload.action)} ${payload.symbol} ${payload.qty}주 주문을 승인 대기에 등록했습니다.`, true);
-            await renderApprovals();
-        }
+        await postJson('/api/approvals', payload);
+        setStatus(`${toKorAction(payload.action)} ${payload.symbol} 二쇰Ц???뱀씤 ?湲곗뿉 ?щ졇?듬땲??`, true);
+        await renderApprovals();
     } catch (err) {
-        setStatus(`승인 대기 등록 실패: ${err.message}`);
-        button.disabled = false;
-    }
-}
-
-async function createSellApproval(button, qty) {
-    const payload = {
-        symbol: button.dataset.symbol,
-        name: button.dataset.name,
-        action: 'sell',
-        qty: Number(qty || 0),
-        price: Number(button.dataset.price || 0),
-        reason: button.dataset.reason || '',
-        source: button.dataset.source || 'manual-holdings'
-    };
-    button.disabled = true;
-    try {
-        const result = await postJson('/api/approvals', payload);
-        if (autoApprovalEnabled) {
-            const approved = await postJson(`/api/approvals/${result.id}/approve`, {});
-            setStatus(`${payload.name || payload.symbol} ${payload.qty}주 매도를 자동승인 처리했습니다: ${toKorStatus(approved.status)}`, approved.status !== 'failed');
-            await Promise.all([renderApprovals(), renderTrades(), renderBalance()]);
-        } else {
-            setStatus(`${payload.name || payload.symbol} ${payload.qty}주 매도를 승인 대기에 등록했습니다. 아래 주문 승인 대기에서 승인해야 주문이 전송됩니다.`, true);
-            await renderApprovals();
-            document.querySelector('.panel-approvals')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            const approvalButton = document.querySelector(`#table-approvals button[data-id="${result.id}"]`);
-            const approvalRow = approvalButton?.closest('tr');
-            if (approvalRow) {
-                approvalRow.classList.add('row-highlight');
-                setTimeout(() => approvalRow.classList.remove('row-highlight'), 2500);
-            }
-        }
-    } catch (err) {
-        setStatus(`매도 승인 대기 등록 실패: ${err.message}`);
+        setStatus(`?뱀씤 ?湲??깅줉 ?ㅽ뙣: ${err.message}`);
         button.disabled = false;
     }
 }
 
 function bindQueueButtons() {
     document.querySelectorAll('.queue-order').forEach((button) => {
-        if (button.dataset.bound === 'true') {
-            return;
-        }
-        button.dataset.bound = 'true';
-        button.addEventListener('click', () => createApprovalFromButton(button));
-    });
-    document.querySelectorAll('.queue-partial-sell').forEach((button) => {
-        if (button.dataset.bound === 'true') {
-            return;
-        }
-        button.dataset.bound = 'true';
-        button.addEventListener('click', () => createPartialSellFromButton(button));
-    });
-    document.querySelectorAll('.queue-full-sell').forEach((button) => {
-        if (button.dataset.bound === 'true') {
-            return;
-        }
-        button.dataset.bound = 'true';
-        button.addEventListener('click', () => createSellApproval(button, Number(button.dataset.qty || 0)));
+        button.addEventListener('click', () => createApprovalFromButton(button), { once: true });
     });
 }
 
 async function renderApprovals() {
     try {
         const data = await fetchJson('/api/approvals?limit=50');
-        const approvals = Array.isArray(data.approvals) ? data.approvals : [];
         const tbody = document.querySelector('#table-approvals tbody');
-        const tableWrap = document.querySelector('.panel-approvals .table-responsive');
-        tableWrap?.classList.toggle('is-scrollable', approvals.length >= 10);
         tbody.innerHTML = '';
-        if (!approvals.length) {
-            setTableMessage('#table-approvals tbody', 7, '승인 대기 주문이 없습니다');
+        if (!data.approvals.length) {
+            setTableMessage('#table-approvals tbody', 7, '?뱀씤 ?湲?二쇰Ц???놁뒿?덈떎');
             return;
         }
 
-        approvals.forEach((row) => {
+        data.approvals.forEach((row) => {
             const status = String(row.status || '');
             const statusKind = status === 'pending' ? 'warn' : (status === 'executed' ? 'buy' : (status === 'failed' ? 'sell' : 'hold'));
             const controls = status === 'pending'
                 ? `<div class="button-row">
-                    <button type="button" class="approve-order" data-id="${row.id}">승인</button>
-                    <button type="button" class="button-danger reject-order" data-id="${row.id}">거절</button>
+                    <button type="button" class="approve-order" data-id="${row.id}">?뱀씤</button>
+                    <button type="button" class="button-danger reject-order" data-id="${row.id}">嫄곗젅</button>
                    </div>`
                 : `<span class="time-muted">${escapeHtml(row.response_msg || '')}</span>`;
 
@@ -1464,7 +888,6 @@ async function renderApprovals() {
             button.addEventListener('click', () => handleApprovalAction(button, 'reject'));
         });
     } catch (err) {
-        document.querySelector('.panel-approvals .table-responsive')?.classList.remove('is-scrollable');
         setTableMessage('#table-approvals tbody', 7, err.message);
     }
 }
@@ -1473,20 +896,20 @@ async function handleApprovalAction(button, action) {
     button.disabled = true;
     try {
         const result = await postJson(`/api/approvals/${button.dataset.id}/${action}`, {});
-        setStatus(`승인 처리 결과: ${toKorStatus(result.status)} #${result.id}`, result.status !== 'failed');
+        setStatus(`?뱀씤 泥섎━ 寃곌낵: ${toKorStatus(result.status)} #${result.id}`, result.status !== 'failed');
         await Promise.all([renderApprovals(), renderTrades(), renderBalance()]);
     } catch (err) {
-        setStatus(`승인 처리 실패: ${err.message}`);
+        setStatus(`?뱀씤 泥섎━ ?ㅽ뙣: ${err.message}`);
         button.disabled = false;
     }
 }
 
 async function renderTrades() {
     try {
-        // 성과 요약 (Performance)
+        // ?깃낵 ?붿빟 (Performance)
         try {
             const perf = await fetchJson('/api/performance');
-            document.getElementById('perf-total-trades').textContent = `${perf.total_trades}회`;
+            document.getElementById('perf-total-trades').textContent = `${perf.total_trades}??;
             document.getElementById('perf-success-rate').textContent = `${perf.success_rate}%`;
             
             const pnlEl = document.getElementById('perf-realized-pnl');
@@ -1505,21 +928,19 @@ async function renderTrades() {
                 tbodyEval.innerHTML = '';
                 const details = perf.eval_details || [];
                 if (!details.length) {
-                    setTableMessage('#table-eval-details tbody', 7, '자동매매로 매수한 보유종목이 없습니다.');
+                    setTableMessage('#table-eval-details tbody', 6, '?먮룞留ㅻℓ濡?留ㅼ닔??蹂댁쑀醫낅ぉ???놁뒿?덈떎.');
                 } else {
                     details.forEach((item) => {
                         const tr = document.createElement('tr');
                         const pnlClass = item.eval_pnl > 0 ? 'text-success' : (item.eval_pnl < 0 ? 'text-danger' : '');
-                        const evalAmount = Number(item.qty || 0) * Number(item.current_price || 0);
                         tr.innerHTML = `
                             <td>
                                 <span class="symbol-name">${escapeHtml(item.name || item.symbol)}</span>
-                                ${item.diff_reason ? `<div style="font-size: 0.75rem; color: #ffc107; margin-top: 2px;">⚠️ ${escapeHtml(item.diff_reason)}</div>` : ''}
+                                ${item.diff_reason ? `<div style="font-size: 0.75rem; color: #ffc107; margin-top: 2px;">?좑툘 ${escapeHtml(item.diff_reason)}</div>` : ''}
                             </td>
                             <td>${Number(item.qty || 0).toLocaleString()}</td>
                             <td>${formatCurrency(item.avg_cost)}</td>
                             <td>${formatCurrency(item.current_price)}</td>
-                            <td>${formatCurrency(evalAmount)}</td>
                             <td class="${pnlClass}">${item.return_rate > 0 ? '+' : ''}${item.return_rate.toFixed(2)}%</td>
                             <td class="${pnlClass}">${item.eval_pnl > 0 ? '+' : ''}${formatCurrency(item.eval_pnl)}</td>
                         `;
@@ -1546,17 +967,17 @@ async function renderTrades() {
                         if (item.diff_reason) {
                             const diffAmt = (item.broker_pnl || 0) - (item.eval_pnl || 0);
                             const sign = diffAmt > 0 ? '+' : '';
-                            diffHtml += `<li><strong>${escapeHtml(item.name)}</strong>: ${escapeHtml(item.diff_reason)} (평가손익 차액: ${sign}${formatCurrency(diffAmt)})</li>`;
+                            diffHtml += `<li><strong>${escapeHtml(item.name)}</strong>: ${escapeHtml(item.diff_reason)} (?됯??먯씡 李⑥븸: ${sign}${formatCurrency(diffAmt)})</li>`;
                         }
                     });
                     
                     const untracked = perf.untracked_details || [];
                     untracked.forEach(item => {
                         const sign = item.broker_pnl > 0 ? '+' : '';
-                        diffHtml += `<li><strong>${escapeHtml(item.name)}</strong>: ${escapeHtml(item.diff_reason)} (증권사 평가손익 전체 합산: ${sign}${formatCurrency(item.broker_pnl)})</li>`;
+                        diffHtml += `<li><strong>${escapeHtml(item.name)}</strong>: ${escapeHtml(item.diff_reason)} (利앷텒???됯??먯씡 ?꾩껜 ?⑹궛: ${sign}${formatCurrency(item.broker_pnl)})</li>`;
                     });
                     
-                    diffList.innerHTML = diffHtml || '<li>차이 원인을 분석할 수 없는 오차가 있습니다. (API 지연 등)</li>';
+                    diffList.innerHTML = diffHtml || '<li>李⑥씠 ?먯씤??遺꾩꽍?????녿뒗 ?ㅼ감媛 ?덉뒿?덈떎. (API 吏????</li>';
                 } else {
                     diffContainer.hidden = true;
                 }
@@ -1565,21 +986,19 @@ async function renderTrades() {
             console.error('Failed to fetch performance summary', e);
         }
 
-        await renderPerformancePeriod();
-
         const trades = await fetchJson('/api/trades?limit=20');
         const tbodyTrades = document.querySelector('#table-trades tbody');
         tbodyTrades.innerHTML = '';
 
         if (!trades.trades.length) {
-            setTableMessage('#table-trades tbody', 6, '주문 기록이 없습니다');
+            setTableMessage('#table-trades tbody', 6, '二쇰Ц 湲곕줉???놁뒿?덈떎');
         }
 
         trades.trades.forEach((trade) => {
             const action = String(trade.action || '').toLowerCase();
             const badge = action === 'buy'
-                ? '<span class="badge badge-buy">매수</span>'
-                : '<span class="badge badge-sell">매도</span>';
+                ? '<span class="badge badge-buy">留ㅼ닔</span>'
+                : '<span class="badge badge-sell">留ㅻ룄</span>';
             const [datePart = '-', timePart = '-'] = String(trade.ts || '').split(' ');
             const reason = escapeHtml(translateReason(trade.reason || '-'));
 
@@ -1604,45 +1023,43 @@ async function renderTrades() {
 }
 
 async function fetchDashboardData() {
-    await renderConfig();
-    await Promise.all([renderRuntime(), renderBalance(), renderTrades(), renderApprovals()]);
+    await Promise.all([renderRuntime(), renderConfig(), renderBalance(), renderTrades(), renderApprovals()]);
 }
 document.getElementById('btn-reset-circuit').addEventListener('click', resetCircuitBreaker);
-document.getElementById('btn-auto-approval').addEventListener('click', toggleAutoApproval);
 document.getElementById('btn-signals').addEventListener('click', renderSignals);
 
 const btnSyncTrades = document.getElementById('btn-sync-trades');
 if (btnSyncTrades) {
     btnSyncTrades.addEventListener('click', async () => {
         btnSyncTrades.disabled = true;
-        btnSyncTrades.textContent = '동기화 중...';
+        btnSyncTrades.textContent = '?숆린??以?..';
         btnSyncTrades.style.backgroundColor = '#f59e0b'; // warning yellow
         btnSyncTrades.style.color = 'white';
         try {
             const result = await postJson('/api/trades/sync', {});
-            setStatus(`증권사 기록 동기화 완료 (누락된 ${result.synced_count}건 추가됨)`, true);
+            setStatus(`利앷텒??湲곕줉 ?숆린???꾨즺 (?꾨씫??${result.synced_count}嫄?異붽???`, true);
             await renderTrades();
             
-            btnSyncTrades.textContent = result.synced_count > 0 ? `동기화 완료 (${result.synced_count}건)` : '동기화 완료 ✔️';
+            btnSyncTrades.textContent = result.synced_count > 0 ? `?숆린???꾨즺 (${result.synced_count}嫄?` : '?숆린???꾨즺 ?뷂툘';
             btnSyncTrades.style.backgroundColor = '#10b981'; // success green
             btnSyncTrades.style.color = 'white';
             
             setTimeout(() => {
                 btnSyncTrades.disabled = false;
-                btnSyncTrades.textContent = '증권사 기록 동기화';
+                btnSyncTrades.textContent = '利앷텒??湲곕줉 ?숆린??;
                 btnSyncTrades.style.backgroundColor = '';
                 btnSyncTrades.style.color = '';
             }, 3000);
             
         } catch (err) {
-            setStatus(`동기화 실패: ${err.message}`);
-            btnSyncTrades.textContent = '동기화 실패';
+            setStatus(`?숆린???ㅽ뙣: ${err.message}`);
+            btnSyncTrades.textContent = '?숆린???ㅽ뙣';
             btnSyncTrades.style.backgroundColor = '#ef4444'; // error red
             btnSyncTrades.style.color = 'white';
             
             setTimeout(() => {
                 btnSyncTrades.disabled = false;
-                btnSyncTrades.textContent = '증권사 기록 동기화';
+                btnSyncTrades.textContent = '利앷텒??湲곕줉 ?숆린??;
                 btnSyncTrades.style.backgroundColor = '';
                 btnSyncTrades.style.color = '';
             }, 3000);
@@ -1663,14 +1080,14 @@ window.showAiModal = function(element) {
     if (payloadText) {
         try {
             const payload = JSON.parse(decodeURIComponent(payloadText));
-            titleEl.textContent = `${payload.name || payload.symbol || 'AI 전략'} 상세 근거`;
+            titleEl.textContent = `${payload.name || payload.symbol || 'AI ?꾨왂'} ?곸꽭 洹쇨굅`;
             if (subtitleEl) {
                 subtitleEl.textContent = payload.ai_strategy_name || '';
             }
             bodyEl.innerHTML = buildAiModalMarkup(payload);
         } catch (_err) {
             const reasonText = element.getAttribute('data-reason') || '-';
-            titleEl.textContent = 'AI 전략 상세 근거';
+            titleEl.textContent = 'AI ?꾨왂 ?곸꽭 洹쇨굅';
             if (subtitleEl) {
                 subtitleEl.textContent = '';
             }
@@ -1678,7 +1095,7 @@ window.showAiModal = function(element) {
         }
     } else {
         const reasonText = element.getAttribute('data-reason') || '-';
-        titleEl.textContent = 'AI 전략 상세 근거';
+        titleEl.textContent = 'AI ?꾨왂 ?곸꽭 洹쇨굅';
         if (subtitleEl) {
             subtitleEl.textContent = '';
         }
@@ -1691,7 +1108,7 @@ window.addEventListener('load', () => {
     const aiModal = document.getElementById('aiModal');
     const ncModal = document.getElementById('noCandidatesModal');
 
-    // 닫기 버튼 — 모든 .close-modal 버튼을 각 모달 컨텍스트로 연결
+    // ?リ린 踰꾪듉 ??紐⑤뱺 .close-modal 踰꾪듉??媛?紐⑤떖 而⑦뀓?ㅽ듃濡??곌껐
     document.querySelectorAll('.close-modal').forEach(btn => {
         btn.addEventListener('click', () => {
             setAiModalOpen(false);
@@ -1715,11 +1132,10 @@ document.getElementById('btn-candidates').addEventListener('click', renderCandid
 document.getElementById('btn-approvals').addEventListener('click', renderApprovals);
 document.getElementById('btn-ai-allocation').addEventListener('click', renderAiAllocation);
 document.getElementById('btn-optimizer').addEventListener('click', renderOptimizer);
-setTableMessage('#table-signals tbody', 7, '진단하기를 누르면 보유 종목 신호를 확인합니다');
-setTableMessage('#table-candidates tbody', 8, '찾기를 누르면 관심종목에서 매수 후보를 검색합니다');
-setTableMessage('#table-approvals tbody', 7, '승인 대기 주문이 없습니다');
-setTableMessage('#table-ai-allocation tbody', 8, '계산을 누르면 AI 목표 비중을 확인합니다');
-setTableMessage('#table-optimizer tbody', 7, '최적화를 누르면 리스크 기반 목표 비중을 확인합니다');
-bindPerformanceTabs();
+setTableMessage('#table-signals tbody', 7, '吏꾨떒?섍린瑜??꾨Ⅴ硫?蹂댁쑀 醫낅ぉ ?좏샇瑜??뺤씤?⑸땲??);
+setTableMessage('#table-candidates tbody', 8, '李얘린瑜??꾨Ⅴ硫?愿?ъ쥌紐⑹뿉??留ㅼ닔 ?꾨낫瑜?寃?됲빀?덈떎');
+setTableMessage('#table-approvals tbody', 7, '?뱀씤 ?湲?二쇰Ц???놁뒿?덈떎');
+setTableMessage('#table-ai-allocation tbody', 8, '怨꾩궛???꾨Ⅴ硫?AI 紐⑺몴 鍮꾩쨷???뺤씤?⑸땲??);
+setTableMessage('#table-optimizer tbody', 7, '理쒖쟻?붾? ?꾨Ⅴ硫?由ъ뒪??湲곕컲 紐⑺몴 鍮꾩쨷???뺤씤?⑸땲??);
 fetchDashboardData();
-setInterval(() => Promise.all([renderRuntime(), renderBalance(), renderTrades(), renderApprovals()]), 60000);
+setInterval(() => Promise.all([renderRuntime(), renderBalance(), renderTrades(), renderApprovals()]), 30000);
