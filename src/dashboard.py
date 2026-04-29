@@ -1003,88 +1003,6 @@ async def get_performance():
             total_eval_pnl = 0
             for sym, data in holdings.items():
                 if data["qty"] > 0:
-                    current_price = current_holdings.get(sym, {}).get("price", data["cost"])
-                    eval_pnl = (current_price - data["cost"]) * data["qty"]
-                    total_eval_pnl += eval_pnl
-                    eval_details.append({
-                        "symbol": sym,
-                        "name": names.get(sym, sym),
-                        "qty": data["qty"],
-                        "cost": data["cost"],
-                        "current_price": current_price,
-                        "eval_pnl": eval_pnl
-                    })
-
-        return {
-            "realized_pnl": realized_pnl,
-            "total_eval_pnl": total_eval_pnl,
-            "success_rate": success_rate,
-            "total_trades": total_trades,
-            "holdings": holdings,
-            "eval_details": eval_details
-        }
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/risk/status")
-async def get_risk_status():
-    try:
-        api = _get_api()
-        balance_data = _get_balance_data(api, allow_cache=True)
-        parsed = _parse_balance(balance_data)
-        
-        total_capital = trader.TOTAL_CAPITAL
-        pnl = parsed.get("pnl", 0)
-        loss_pct = abs(pnl) / total_capital * 100 if total_capital > 0 and pnl < 0 else 0
-        max_daily_loss = trader.config.max_daily_loss_pct
-        
-        return {
-            "total_capital": total_capital,
-            "current_total": parsed.get("total_eval", 0),
-            "daily_pnl": pnl,
-            "daily_loss_pct": round(loss_pct, 2),
-            "max_daily_loss_pct": max_daily_loss,
-            "halted": loss_pct >= max_daily_loss or Path(".runtime/kill_switch.json").exists()
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/decisions/history")
-async def get_decision_history(limit: int = 50):
-    try:
-        with trader.connect_db() as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT * FROM decision_logs ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
-            logs = [dict(row) for row in rows]
-            for log in logs:
-                if isinstance(log.get("indicators"), str):
-                    try:
-                        log["indicators"] = json.loads(log["indicators"])
-                    except:
-                        pass
-            return {"decisions": logs}
-    except Exception as e:
-        return {"decisions": []}
-
-@app.post("/api/system/kill")
-async def activate_kill_switch():
-    kill_file = Path(".runtime/kill_switch.json")
-    kill_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(kill_file, "w") as f:
-        json.dump({"active": True, "ts": trader.datetime.now(trader.KST).isoformat()}, f)
-    return {"ok": True, "msg": "Kill switch activated"}
-
-@app.post("/api/system/unkill")
-async def deactivate_kill_switch():
-    kill_file = Path(".runtime/kill_switch.json")
-    if kill_file.exists():
-        kill_file.unlink()
-    return {"ok": True, "msg": "Kill switch deactivated"}
-            total_eval_pnl = 0
-            for sym, data in holdings.items():
-                if data["qty"] > 0:
                     current_price = data["cost"]
                     if sym in current_holdings:
                         current_price = current_holdings[sym]["price"]
@@ -1152,3 +1070,58 @@ async def deactivate_kill_switch():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/risk/status")
+async def get_risk_status():
+    try:
+        api = _get_api()
+        balance_data = _get_balance_data(api, allow_cache=True)
+        parsed = _parse_balance(balance_data)
+        
+        total_capital = trader.TOTAL_CAPITAL
+        pnl = parsed.get("pnl", 0)
+        loss_pct = abs(pnl) / total_capital * 100 if total_capital > 0 and pnl < 0 else 0
+        max_daily_loss = getattr(trader.config, "max_daily_loss_pct", 3.0)
+        
+        return {
+            "total_capital": total_capital,
+            "current_total": parsed.get("total_eval", 0),
+            "daily_pnl": pnl,
+            "daily_loss_pct": round(loss_pct, 2),
+            "max_daily_loss_pct": max_daily_loss,
+            "halted": loss_pct >= max_daily_loss or Path(".runtime/kill_switch.json").exists()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/decisions/history")
+async def get_decision_history(limit: int = 50):
+    try:
+        with trader.connect_db() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM decision_logs ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
+            logs = [dict(row) for row in rows]
+            for log in logs:
+                if isinstance(log.get("indicators"), str):
+                    try:
+                        log["indicators"] = json.loads(log["indicators"])
+                    except:
+                        pass
+            return {"decisions": logs}
+    except Exception as e:
+        return {"decisions": []}
+
+@app.post("/api/system/kill")
+async def activate_kill_switch():
+    kill_file = Path(".runtime/kill_switch.json")
+    kill_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(kill_file, "w") as f:
+        json.dump({"active": True, "ts": trader.datetime.now(trader.KST).isoformat()}, f)
+    return {"ok": True, "msg": "Kill switch activated"}
+
+@app.post("/api/system/unkill")
+async def deactivate_kill_switch():
+    kill_file = Path(".runtime/kill_switch.json")
+    if kill_file.exists():
+        kill_file.unlink()
+    return {"ok": True, "msg": "Kill switch deactivated"}
