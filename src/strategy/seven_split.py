@@ -633,15 +633,3 @@ def generate_signal(stock: dict, daily_data: list) -> dict:
     return {"action": "hold", "qty": 0, "price": 0, "reason": f"hold {rt:+.1f}% RSI={rsi}", "indicators": indicators}
 
 
-def check_daily_loss(pnl: int) -> bool:
-    if config.total_capital <= 0 or pnl >= 0:
-        return False
-    loss_pct = abs(pnl) / config.total_capital * 100
-    if loss_pct >= config.max_daily_loss_pct:
-        msg = f"Daily loss limit reached: {loss_pct:.1f}% >= {config.max_daily_loss_pct}%"
-        logger.info(f"[WARN] {msg}")
-        slack_error(msg)
-        return True
-    return False
-
-

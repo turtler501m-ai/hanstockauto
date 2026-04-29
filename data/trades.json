@@ -1,0 +1,98 @@
+[
+  {
+    "ts": "2026-04-28 15:17:35",
+    "symbol": "003490",
+    "name": "대한항공",
+    "action": "buy",
+    "qty": 98,
+    "price": 24350,
+    "reason": "RSI pullback 43, trend pullback RSI2=0, SMA20>SMA60",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 1
+  },
+  {
+    "ts": "2026-04-28 15:35:11",
+    "symbol": "005490",
+    "name": "POSCO홀딩스",
+    "action": "buy",
+    "qty": 5,
+    "price": 466000,
+    "reason": "증권사 잔고 강제 동기화 (수동/누락분 보정)",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 0
+  },
+  {
+    "ts": "2026-04-28 15:35:11",
+    "symbol": "066570",
+    "name": "LG전자",
+    "action": "buy",
+    "qty": 16,
+    "price": 141100,
+    "reason": "증권사 잔고 강제 동기화 (수동/누락분 보정)",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 0
+  },
+  {
+    "ts": "2026-04-28 15:35:11",
+    "symbol": "003490",
+    "name": "003490",
+    "action": "sell",
+    "qty": 196,
+    "price": 24350,
+    "reason": "증권사 잔고 강제 동기화 (전량매도 보정)",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 0
+  },
+  {
+    "ts": "2026-04-28 15:37:45",
+    "symbol": "003490",
+    "name": "003490",
+    "action": "sell",
+    "qty": 98,
+    "price": 24350,
+    "reason": "증권사 잔고 강제 동기화 (전량매도 보정)",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 0
+  },
+  {
+    "ts": "2026-04-28 15:43:37",
+    "symbol": "066570",
+    "name": "LG전자",
+    "action": "sell",
+    "qty": 2,
+    "price": 141100,
+    "reason": "증권사 잔고 강제 동기화 (수동/누락분 보정)",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 0
+  },
+  {
+    "ts": "2026-04-28 15:43:37",
+    "symbol": "003490",
+    "name": "003490",
+    "action": "sell",
+    "qty": 98,
+    "price": 24350,
+    "reason": "증권사 잔고 강제 동기화 (전량매도 보정)",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 0
+  },
+  {
+    "ts": "2026-04-28 15:50:02",
+    "symbol": "003490",
+    "name": "대한항공",
+    "action": "buy",
+    "qty": 98,
+    "price": 24350,
+    "reason": "RSI pullback 44, trend pullback RSI2=0, SMA20>SMA60",
+    "ok": 0,
+    "env": "demo",
+    "dry_run": 0
+  }
+]

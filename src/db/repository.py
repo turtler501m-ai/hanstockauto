@@ -80,6 +80,22 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS decision_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                name TEXT NOT NULL,
+                action TEXT NOT NULL,
+                qty INTEGER NOT NULL,
+                price INTEGER NOT NULL,
+                reason TEXT,
+                indicators TEXT,
+                approved INTEGER NOT NULL
+            )
+            """
+        )
 
 def save_trade(symbol: str, name: str, action: str, qty: int, price: int, reason: str, ok: bool, order_submission_enabled: bool) -> None:
     ts = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
@@ -106,3 +122,17 @@ def save_trade(symbol: str, name: str, action: str, qty: int, price: int, reason
             
     except Exception as e:
         logger.warning(f"Failed to save trade history: {e}")
+
+def save_decision_log(symbol: str, name: str, action: str, qty: int, price: int, reason: str, indicators: dict, approved: bool) -> None:
+    ts = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with connect_db() as conn:
+            conn.execute(
+                """
+                INSERT INTO decision_logs (ts, symbol, name, action, qty, price, reason, indicators, approved)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (ts, symbol, name, action, qty, price, reason, json.dumps(indicators, ensure_ascii=False), int(approved))
+            )
+    except Exception as e:
+        logger.warning(f"Failed to save decision log: {e}")

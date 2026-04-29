@@ -12,9 +12,11 @@ from src.db.repository import init_db, connect_db, save_trade
 from src.notifier.slack import slack_session_start, slack_order, slack_candidates, slack_session_end, slack_error
 from src.strategy.seven_split import (
     WATCHLIST, KOSPI_UNIVERSE, STOCK_NAMES,
-    check_daily_loss, generate_signal, build_scan_universe, find_candidates, build_orders,
+    generate_signal, build_scan_universe, find_candidates, build_orders,
     generate_ai_weight_plan, generate_portfolio_optimizer_plan
 )
+from src.strategy.risk import RiskEngine
+from src.strategy.router import OrderRouter
 
 KST = timezone(timedelta(hours=9))
 
@@ -75,7 +77,10 @@ def run() -> None:
     logger.info(f"Cash={cash:,} KRW | Total={total_eval:,} KRW | PnL={pnl:+,} KRW | Holdings={len(stocks)}")
     slack_session_start(cash=cash, total=total_eval, stock_count=len(stocks), order_submission_enabled=ORDER_SUBMISSION_ENABLED, real_orders_enabled=REAL_ORDERS_ENABLED)
 
-    daily_loss_halt = check_daily_loss(pnl)
+    risk_engine = RiskEngine()
+    router = OrderRouter(api)
+    
+    risk_engine.check_daily_loss(pnl)
     results = []
     held_symbols: set[str] = set()
 
@@ -98,19 +103,17 @@ def run() -> None:
 
         if signal["action"] == "hold":
             continue
-        if signal["action"] == "buy":
-            if daily_loss_halt:
-                logger.info("[SKIP] Daily loss halt active")
-                continue
-            cost = signal["qty"] * signal["price"]
-            if cost > cash:
-                logger.info(f"[SKIP] Not enough cash: need={cost:,}, cash={cash:,}")
-                continue
+            
+        eval_res = risk_engine.evaluate_order(signal["action"], signal["qty"], signal["price"], cash)
+        if not eval_res["approved"]:
+            logger.info(f"[SKIP] {eval_res['reason']}")
+            from src.db.repository import save_decision_log
+            save_decision_log(sym, name, signal["action"], signal["qty"], signal["price"], eval_res["reason"], indicators, False)
+            continue
 
-        result = api.place_order(sym, signal["action"], signal["price"], signal["qty"])
-        ok = result.get("rt_cd") == "0"
-        logger.info(f"Order {'OK' if ok else 'FAILED'}: {result.get('msg1', '')}")
-        save_trade(sym, name, signal["action"], signal["qty"], signal["price"], signal["reason"], ok, ORDER_SUBMISSION_ENABLED)
+        route_res = router.route(sym, name, signal["action"], signal["qty"], signal["price"], signal["reason"], indicators)
+        ok = route_res.get("ok", False)
+        
         row = {
             "name": name,
             "symbol": sym,
@@ -126,7 +129,7 @@ def run() -> None:
         if ok and signal["action"] == "buy":
             cash -= signal["qty"] * signal["price"]
 
-    if not daily_loss_halt:
+    if not risk_engine.daily_loss_halt:
         logger.info("--- Scanning for new buy candidates (AI universe) ---")
         universe = build_scan_universe(api, held_symbols)
         result = find_candidates(held_symbols, universe=universe)
@@ -139,12 +142,20 @@ def run() -> None:
                 price = order["limit_price"]
                 reason = f"new buy score={order['score']} ({', '.join(order['reasons'])})"
                 logger.info(f"--- New BUY {sym} qty={qty} price={price:,} ---")
-                result = api.place_order(sym, "buy", price, qty)
-                ok = result.get("rt_cd") == "0"
-                logger.info(f"Order {'OK' if ok else 'FAILED'}: {result.get('msg1', '')}")
-                save_trade(sym, sym, "buy", qty, price, reason, ok, ORDER_SUBMISSION_ENABLED)
+                
                 indicators = {"rsi": "-", "sma20": 0, "sma60": 0, "rt": 0}
                 name = next((c.get("name", sym) for c in candidates if c["ticker"] == sym), sym)
+                
+                eval_res = risk_engine.evaluate_order("buy", qty, price, cash)
+                if not eval_res["approved"]:
+                    logger.info(f"[SKIP] {eval_res['reason']}")
+                    from src.db.repository import save_decision_log
+                    save_decision_log(sym, name, "buy", qty, price, eval_res["reason"], indicators, False)
+                    continue
+                    
+                route_res = router.route(sym, name, "buy", qty, price, reason, indicators)
+                ok = route_res.get("ok", False)
+                
                 results.append({"name": name, "symbol": sym, "action": "buy", "qty": qty, "price": price, "reason": reason, "ok": ok, "indicators": indicators})
                 slack_order(name, sym, "buy", qty, price, reason, ok, indicators)
                 if ok:
