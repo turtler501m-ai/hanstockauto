@@ -1,3 +1,4 @@
+import hashlib
 import json
 import threading
 import time
@@ -37,6 +38,13 @@ class KISRateLimitError(RuntimeError):
     """Non-retryable KIS API rate limit response."""
 
 
+class KISAccountError(RuntimeError):
+    """Non-retryable KIS account number/product code error."""
+
+
+NON_RETRYABLE_KIS_ERRORS = (KISConfigError, KISRateLimitError, KISAccountError)
+
+
 class KIStockAPI:
     TOKEN_CACHE = Path("data") / "kis_token.json"
     ETF_MARKET_CODES = {
@@ -47,6 +55,10 @@ class KIStockAPI:
     
     _err_count = 0
     MAX_ERRORS = 5
+
+    @staticmethod
+    def _app_key_hash() -> str:
+        return hashlib.sha256(config.kistock_app_key.encode("utf-8")).hexdigest()
     
     def __init__(self, notify_errors: bool = True) -> None:
         self.notify_errors = notify_errors
@@ -62,7 +74,11 @@ class KIStockAPI:
             try:
                 cached = json.loads(self.TOKEN_CACHE.read_text(encoding="utf-8"))
                 expires_at = datetime.fromisoformat(cached["expires_at"])
-                if cached.get("trading_env") == config.trading_env and expires_at > datetime.now() + timedelta(minutes=5):
+                if (
+                    cached.get("trading_env") == config.trading_env
+                    and cached.get("app_key_hash") == self._app_key_hash()
+                    and expires_at > datetime.now() + timedelta(minutes=5)
+                ):
                     return cached["token"]
             except Exception:
                 pass
@@ -82,7 +98,12 @@ class KIStockAPI:
             expires_at = datetime.now() + timedelta(hours=23)
             self.TOKEN_CACHE.parent.mkdir(parents=True, exist_ok=True)
             self.TOKEN_CACHE.write_text(
-                json.dumps({"token": token, "expires_at": expires_at.isoformat(), "trading_env": config.trading_env}),
+                json.dumps({
+                    "token": token,
+                    "expires_at": expires_at.isoformat(),
+                    "trading_env": config.trading_env,
+                    "app_key_hash": self._app_key_hash(),
+                }),
                 encoding="utf-8",
             )
             return token
@@ -132,6 +153,8 @@ class KIStockAPI:
             return KISConfigError(msg)
         if data.get("msg_cd") == "EGW00201":
             return KISRateLimitError(msg)
+        if "CHECK_ACNO" in msg or "INVALID_CHECK_ACNO" in msg:
+            return KISAccountError(msg)
         return Exception(msg)
 
     def _response_json(self, response: requests.Response, context: str) -> dict:
@@ -146,11 +169,13 @@ class KIStockAPI:
                 raise KISConfigError(msg)
             if data.get("msg_cd") == "EGW00201":
                 raise KISRateLimitError(msg)
+            if "CHECK_ACNO" in msg or "INVALID_CHECK_ACNO" in msg:
+                raise KISAccountError(msg)
             response.raise_for_status()
         return data
 
     @retry(
-        retry=retry_if_not_exception_type(KISConfigError),
+        retry=retry_if_not_exception_type(NON_RETRYABLE_KIS_ERRORS),
         stop=stop_after_attempt(5),
         wait=wait_exponential(multiplier=2, min=3, max=30),
         reraise=True,
@@ -174,7 +199,7 @@ class KIStockAPI:
             raise
 
     @retry(
-        retry=retry_if_not_exception_type(KISConfigError),
+        retry=retry_if_not_exception_type(NON_RETRYABLE_KIS_ERRORS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
     )
@@ -193,7 +218,7 @@ class KIStockAPI:
             raise
 
     @retry(
-        retry=retry_if_not_exception_type(KISConfigError),
+        retry=retry_if_not_exception_type(NON_RETRYABLE_KIS_ERRORS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
     )
@@ -214,7 +239,7 @@ class KIStockAPI:
             raise
 
     @retry(
-        retry=retry_if_not_exception_type(KISConfigError),
+        retry=retry_if_not_exception_type(NON_RETRYABLE_KIS_ERRORS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
     )
@@ -236,7 +261,7 @@ class KIStockAPI:
             raise
 
     @retry(
-        retry=retry_if_not_exception_type(KISConfigError),
+        retry=retry_if_not_exception_type(NON_RETRYABLE_KIS_ERRORS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
     )
@@ -259,7 +284,7 @@ class KIStockAPI:
             raise
 
     @retry(
-        retry=retry_if_not_exception_type(KISConfigError),
+        retry=retry_if_not_exception_type(NON_RETRYABLE_KIS_ERRORS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
     )

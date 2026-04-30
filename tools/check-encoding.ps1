@@ -3,12 +3,16 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+
 $Utf8Strict = [System.Text.UTF8Encoding]::new($false, $true)
 $ExcludedDirs = @(".git", ".runtime", "logs", "vendor", "__pycache__")
 $Extensions = @(
-    ".py", ".js", ".css", ".html", ".md", ".yml", ".yaml", ".json",
-    ".txt", ".sh", ".env", ".example", ".gitignore", ".gitattributes",
-    ".editorconfig"
+    ".py", ".ps1", ".cmd", ".js", ".css", ".html", ".md", ".yml", ".yaml",
+    ".json", ".txt", ".sh", ".env", ".example", ".gitignore",
+    ".gitattributes", ".editorconfig"
 )
 
 $badFiles = New-Object System.Collections.Generic.List[string]

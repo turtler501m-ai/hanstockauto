@@ -179,13 +179,32 @@ const setButtonBusy = (id, busy) => {
     }
 };
 
-async function fetchJson(url) {
-    const response = await fetch(url);
-    const data = await response.json();
-    if (!response.ok) {
-        throw new Error(data.detail || `요청 실패: ${response.status}`);
+const setElementText = (id, value) => {
+    const element = document.getElementById(id);
+    if (element) {
+        element.textContent = value;
     }
-    return data;
+    return element;
+};
+
+async function fetchJson(url, timeoutMs = 6000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || `요청 실패: ${response.status}`);
+        }
+        return data;
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            throw new Error(`요청 시간 초과: ${url}`);
+        }
+        throw err;
+    } finally {
+        clearTimeout(timeoutId);
+    }
 }
 
 async function postJson(url, payload = {}) {
@@ -379,14 +398,27 @@ function renderPortfolioChart(labels, data, colors) {
 
 async function renderRuntime() {
     const health = await fetchJson('/api/health');
-    const circuit = health.circuit_breaker || {};
     document.getElementById('runtime-env').textContent = health.trading_env === 'real' ? '실전' : '모의';
-    document.getElementById('runtime-dry-run').innerHTML = health.dry_run ? pill('주문차단', 'warn') : pill('전송허용', 'buy');
-    document.getElementById('runtime-order').innerHTML = health.order_submission_enabled ? pill('API 전송 가능', 'buy') : pill('API 전송 차단', 'warn');
+    document.getElementById('runtime-dry-run').innerHTML = health.dry_run ? pill('차단 ON', 'warn') : pill('차단 OFF', 'buy');
+    document.getElementById('runtime-order').innerHTML = health.order_submission_enabled ? pill('가능', 'buy') : pill('차단', 'warn');
     document.getElementById('runtime-real').innerHTML = health.real_orders_enabled ? pill('실주문 가능', 'sell') : pill('실주문 차단', 'hold');
-    document.getElementById('runtime-circuit').innerHTML = circuit.opened
-        ? pill(`차단 ${circuit.retry_after_seconds || 0}초`, 'sell')
-        : pill(`정상 ${circuit.error_count || 0}/${circuit.max_errors || 5}`, 'buy');
+
+    const dryRunButton = document.getElementById('btn-dry-run');
+    if (dryRunButton) {
+        dryRunButton.dataset.enabled = String(Boolean(health.dry_run));
+        dryRunButton.textContent = health.dry_run ? '끄기' : '켜기';
+    }
+
+    const autoApprovalEnabled = Boolean(health.auto_approval_enabled);
+    const autoApprovalEl = document.getElementById('runtime-auto-approval');
+    const autoApprovalButton = document.getElementById('btn-auto-approval');
+    if (autoApprovalEl) {
+        autoApprovalEl.innerHTML = autoApprovalEnabled ? pill('켜짐', 'buy') : pill('꺼짐', 'hold');
+    }
+    if (autoApprovalButton) {
+        autoApprovalButton.dataset.enabled = String(autoApprovalEnabled);
+        autoApprovalButton.textContent = autoApprovalEnabled ? '끄기' : '켜기';
+    }
         
     const btnSyncTrades = document.getElementById('btn-sync-trades');
     if (btnSyncTrades) {
@@ -402,16 +434,37 @@ async function renderRuntime() {
     }
 }
 
-async function resetCircuitBreaker() {
-    setButtonBusy('btn-reset-circuit', true);
+async function toggleRuntimeOrderMode(buttonId, key, label) {
+    const button = document.getElementById(buttonId);
+    const nextEnabled = !(button?.dataset.enabled === 'true');
+    setButtonBusy(buttonId, true);
     try {
-        await postJson('/api/circuit-breaker/reset', {});
-        setStatus('API 차단기를 초기화했습니다. 계좌 정보를 다시 불러옵니다.', true);
-        await Promise.all([renderRuntime(), renderBalance()]);
+        const result = await postJson('/api/runtime/order-mode', { key, enabled: nextEnabled });
+        const stateText = nextEnabled ? '켰습니다' : '껐습니다';
+        const details = `주문차단=${result.dry_run ? 'ON' : 'OFF'}, 최종 주문전송=${result.order_submission_enabled ? '가능' : '차단'}, 실전주문=${result.real_orders_enabled ? '가능' : '차단'}`;
+        setStatus(`${label}을 ${stateText}. ${details}`, true);
+        await Promise.all([renderRuntime(), renderConfig()]);
     } catch (err) {
-        setStatus(`API 차단기 초기화 실패: ${err.message}`);
+        setStatus(`${label} 전환 실패: ${err.message}`);
     } finally {
-        setButtonBusy('btn-reset-circuit', false);
+        setButtonBusy(buttonId, false);
+    }
+}
+
+async function toggleAutoApproval() {
+    const button = document.getElementById('btn-auto-approval');
+    const nextEnabled = !(button?.dataset.enabled === 'true');
+    setButtonBusy('btn-auto-approval', true);
+    try {
+        const result = await postJson('/api/auto-approval', { enabled: nextEnabled });
+        const processedCount = Number(result.processed_count || 0);
+        const suffix = result.enabled && processedCount > 0 ? ` 대기 주문 ${processedCount}건을 처리했습니다.` : '';
+        setStatus(`자동승인을 ${result.enabled ? '켰습니다' : '껐습니다'}.${suffix}`, true);
+        await Promise.all([renderRuntime(), renderApprovals(), renderTrades(), renderBalance()]);
+    } catch (err) {
+        setStatus(`자동승인 전환 실패: ${err.message}`);
+    } finally {
+        setButtonBusy('btn-auto-approval', false);
     }
 }
 
@@ -469,7 +522,7 @@ function renderRisk(balance) {
 
 async function renderBalance() {
     try {
-        const balance = await fetchJson('/api/balance');
+        const balance = await fetchJson('/api/balance', 30000);
         const holdingValue = (balance.holdings || []).reduce((sum, holding) => {
             return sum + Number(holding.value || (Number(holding.qty || 0) * Number(holding.price || 0)));
         }, 0);
@@ -477,9 +530,16 @@ async function renderBalance() {
             ? Number(balance.cash || 0) + holdingValue
             : Number(balance.total_eval || 0);
 
-        document.getElementById('val-total').textContent = formatCurrency(displayTotal);
-        document.getElementById('val-cash').textContent = formatCurrency(balance.cash);
-        document.getElementById('val-holdings').textContent = balance.holdings.length;
+        const principal = Number(latestConfig?.total_capital || 0);
+        const returnRate = principal > 0 ? ((displayTotal - principal) / principal) * 100 : 0;
+
+        setElementText('val-total', formatCurrency(displayTotal));
+        setElementText('val-principal', formatCurrency(principal));
+        setElementText('val-cash', formatCurrency(balance.cash));
+        const returnEl = setElementText('val-return', formatPercent(returnRate));
+        if (returnEl) {
+            returnEl.className = `value ${returnRate >= 0 ? 'text-success' : 'text-danger'}`;
+        }
 
         const pnlEl = document.getElementById('val-pnl');
         pnlEl.textContent = formatCurrency(balance.pnl);
@@ -534,10 +594,11 @@ async function renderBalance() {
         }
     } catch (err) {
         console.error('Failed to fetch balance data', err);
-        document.getElementById('val-total').textContent = '불러오기 실패';
-        document.getElementById('val-cash').textContent = '불러오기 실패';
-        document.getElementById('val-pnl').textContent = '불러오기 실패';
-        document.getElementById('val-holdings').textContent = '-';
+        setElementText('val-total', '불러오기 실패');
+        setElementText('val-principal', '불러오기 실패');
+        setElementText('val-cash', '불러오기 실패');
+        setElementText('val-pnl', '불러오기 실패');
+        setElementText('val-return', '-');
         setStatus(`계좌 API 오류: ${err.message}`);
         setTableMessage('#table-holdings tbody', 5, err.message);
     }
@@ -648,7 +709,7 @@ async function renderCandidates() {
     setButtonBusy('btn-candidates', true);
     setTableMessage('#table-candidates tbody', 8, '관심종목에서 매수 후보를 찾고 있습니다...');
     try {
-        const data = await fetchJson('/api/candidates?min_score=2');
+        const data = await fetchJson('/api/candidates?min_score=2', 45000);
         const tbody = document.querySelector('#table-candidates tbody');
         tbody.innerHTML = '';
         if (!data.candidates.length) {
@@ -748,7 +809,7 @@ async function renderAiAllocation() {
     setButtonBusy('btn-ai-allocation', true);
     setTableMessage('#table-ai-allocation tbody', 8, 'AI 목표 비중을 계산하고 있습니다...');
     try {
-        const data = await fetchJson('/api/ai-allocation');
+        const data = await fetchJson('/api/ai-allocation', 45000);
         const tbody = document.querySelector('#table-ai-allocation tbody');
         tbody.innerHTML = '';
         if (!data.positions.length) {
@@ -827,9 +888,14 @@ async function createApprovalFromButton(button) {
     };
     button.disabled = true;
     try {
-        await postJson('/api/approvals', payload);
-        setStatus(`${toKorAction(payload.action)} ${payload.symbol} 주문을 승인 대기에 올렸습니다.`, true);
-        await renderApprovals();
+        const result = await postJson('/api/approvals', payload);
+        if (result.auto_approved) {
+            setStatus(`${toKorAction(payload.action)} ${payload.symbol} 주문을 자동승인 처리했습니다.`, result.status !== 'failed');
+            await Promise.all([renderApprovals(), renderTrades(), renderBalance()]);
+        } else {
+            setStatus(`${toKorAction(payload.action)} ${payload.symbol} 주문을 승인 대기에 올렸습니다.`, true);
+            await renderApprovals();
+        }
     } catch (err) {
         setStatus(`승인 대기 등록 실패: ${err.message}`);
         button.disabled = false;
@@ -848,13 +914,14 @@ async function renderApprovals() {
         const tbody = document.querySelector('#table-approvals tbody');
         tbody.innerHTML = '';
         if (!data.approvals.length) {
-            setTableMessage('#table-approvals tbody', 7, '승인 대기 주문이 없습니다');
+            setTableMessage('#table-approvals tbody', 8, '승인 대기 주문이 없습니다');
             return;
         }
 
         data.approvals.forEach((row) => {
             const status = String(row.status || '');
             const statusKind = status === 'pending' ? 'warn' : (status === 'executed' ? 'buy' : (status === 'failed' ? 'sell' : 'hold'));
+            const estimatedCost = Number(row.qty || 0) * Number(row.price || 0);
             const controls = status === 'pending'
                 ? `<div class="button-row">
                     <button type="button" class="approve-order" data-id="${row.id}">승인</button>
@@ -875,6 +942,7 @@ async function renderApprovals() {
                 </td>
                 <td>${Number(row.qty || 0).toLocaleString()}</td>
                 <td>${formatCurrency(row.price)}</td>
+                <td>${formatCurrency(estimatedCost)}</td>
                 <td>${pill(toKorStatus(status), statusKind)}</td>
                 <td>${controls}</td>
             `;
@@ -888,7 +956,7 @@ async function renderApprovals() {
             button.addEventListener('click', () => handleApprovalAction(button, 'reject'));
         });
     } catch (err) {
-        setTableMessage('#table-approvals tbody', 7, err.message);
+        setTableMessage('#table-approvals tbody', 8, err.message);
     }
 }
 
@@ -908,7 +976,7 @@ async function renderTrades() {
     try {
         // 성과 요약 (Performance)
         try {
-            const perf = await fetchJson('/api/performance');
+            const perf = await fetchJson('/api/performance', 30000);
             document.getElementById('perf-total-trades').textContent = `${perf.total_trades}회`;
             document.getElementById('perf-success-rate').textContent = `${perf.success_rate}%`;
             
@@ -941,6 +1009,7 @@ async function renderTrades() {
                             <td>${Number(item.qty || 0).toLocaleString()}</td>
                             <td>${formatCurrency(item.avg_cost)}</td>
                             <td>${formatCurrency(item.current_price)}</td>
+                            <td>${formatCurrency(Number(item.current_price || 0) * Number(item.qty || 0))}</td>
                             <td class="${pnlClass}">${item.return_rate > 0 ? '+' : ''}${item.return_rate.toFixed(2)}%</td>
                             <td class="${pnlClass}">${item.eval_pnl > 0 ? '+' : ''}${formatCurrency(item.eval_pnl)}</td>
                         `;
@@ -1025,7 +1094,6 @@ async function renderTrades() {
 async function fetchDashboardData() {
     await Promise.all([renderRuntime(), renderConfig(), renderBalance(), renderTrades(), renderApprovals()]);
 }
-document.getElementById('btn-reset-circuit').addEventListener('click', resetCircuitBreaker);
 document.getElementById('btn-signals').addEventListener('click', renderSignals);
 
 const btnSyncTrades = document.getElementById('btn-sync-trades');
@@ -1132,9 +1200,11 @@ document.getElementById('btn-candidates').addEventListener('click', renderCandid
 document.getElementById('btn-approvals').addEventListener('click', renderApprovals);
 document.getElementById('btn-ai-allocation').addEventListener('click', renderAiAllocation);
 document.getElementById('btn-optimizer').addEventListener('click', renderOptimizer);
+document.getElementById('btn-auto-approval').addEventListener('click', toggleAutoApproval);
+document.getElementById('btn-dry-run').addEventListener('click', () => toggleRuntimeOrderMode('btn-dry-run', 'DRY_RUN', '주문차단'));
 setTableMessage('#table-signals tbody', 7, '진단하기를 누르면 보유 종목 신호를 확인합니다');
 setTableMessage('#table-candidates tbody', 8, '찾기를 누르면 관심종목에서 매수 후보를 검색합니다');
-setTableMessage('#table-approvals tbody', 7, '승인 대기 주문이 없습니다');
+setTableMessage('#table-approvals tbody', 8, '승인 대기 주문이 없습니다');
 setTableMessage('#table-ai-allocation tbody', 8, '계산을 누르면 AI 목표 비중을 확인합니다');
 setTableMessage('#table-optimizer tbody', 7, '최적화를 누르면 리스크 기반 목표 비중을 확인합니다');
 fetchDashboardData();

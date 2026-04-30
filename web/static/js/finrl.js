@@ -29,13 +29,24 @@ const setTableMessage = (selector, colspan, message) => {
         `<tr><td colspan="${colspan}" class="empty-state">${escapeHtml(message)}</td></tr>`;
 };
 
-async function fetchJson(url) {
-    const response = await fetch(url);
-    const data = await response.json();
-    if (!response.ok) {
-        throw new Error(data.detail || `Request failed: ${response.status}`);
+async function fetchJson(url, timeoutMs = 6000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || `Request failed: ${response.status}`);
+        }
+        return data;
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            throw new Error(`Request timed out: ${url}`);
+        }
+        throw err;
+    } finally {
+        clearTimeout(timeoutId);
     }
-    return data;
 }
 
 async function postJson(url, payload = {}) {
@@ -105,7 +116,7 @@ async function renderAllocation() {
     button.disabled = true;
     setTableMessage('#table-finrl-allocation tbody', 7, 'Generating FinRL-style allocation...');
     try {
-        const data = await fetchJson('/api/ai-allocation');
+        const data = await fetchJson('/api/ai-allocation', 45000);
         const tbody = document.querySelector('#table-finrl-allocation tbody');
         tbody.innerHTML = '';
         if (!data.positions.length) {

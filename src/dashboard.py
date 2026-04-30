@@ -1,5 +1,6 @@
 import json
 import hashlib
+import concurrent.futures
 import os
 import sqlite3
 import subprocess
@@ -15,8 +16,10 @@ load_dotenv()
 
 from src import trader  # noqa: E402
 from src.trader import KIStockAPI  # noqa: E402
-from src.api.kis_api import KISConfigError  # noqa: E402
+from src.api.kis_api import KISAccountError, KISConfigError, KISRateLimitError  # noqa: E402
 from src.notifier.slack import slack_order as _slack_order, slack_error as _slack_error  # noqa: E402
+from src.strategy.allocator import PortfolioAllocator  # noqa: E402
+from src.strategy.seven_split import adjust_tick_size  # noqa: E402
 
 
 app = FastAPI(title="Seven Split Dashboard", version="1.0.0")
@@ -32,15 +35,17 @@ AUTO_APPROVAL_STATE = trader.RUNTIME_DIR / "auto_approval.json"
 ENV_PATH = BASE_DIR / ".env"
 CANDIDATE_CACHE_TTL_SECONDS = int(os.environ.get("CANDIDATE_CACHE_TTL_SECONDS", "180"))
 BALANCE_CACHE_TTL_SECONDS = int(os.environ.get("BALANCE_CACHE_TTL_SECONDS", "30"))
+BALANCE_FETCH_TIMEOUT_SECONDS = float(os.environ.get("BALANCE_FETCH_TIMEOUT_SECONDS", "25"))
+GIT_FETCH_TIMEOUT_SECONDS = float(os.environ.get("GIT_FETCH_TIMEOUT_SECONDS", "3"))
 _balance_fetch_lock = threading.Lock()
 ENV_FIELDS = [
     {"key": "KISTOCK_APP_KEY", "label": "KIS App Key", "type": "secret"},
     {"key": "KISTOCK_APP_SECRET", "label": "KIS App Secret", "type": "secret"},
-    {"key": "KISTOCK_ACCOUNT", "label": "KIS Account", "type": "secret", "hint": "계좌번호 8자리 + 상품코드 2자리, 예: 1234567801"},
-    {"key": "TRADING_ENV", "label": "Trading Env", "type": "select", "options": ["demo", "real"]},
-    {"key": "DRY_RUN", "label": "Dry Run", "type": "bool"},
-    {"key": "ENABLE_LIVE_TRADING", "label": "Enable Live Trading", "type": "bool"},
-    {"key": "REQUIRE_APPROVAL", "label": "Require Approval", "type": "bool"},
+    {"key": "KISTOCK_ACCOUNT", "label": "KIS Account", "type": "secret", "hint": "계좌번호 8자리 또는 계좌번호 8자리 + 상품코드 2자리, 예: 12345678 또는 1234567801"},
+    {"key": "TRADING_ENV", "label": "거래환경", "type": "select", "options": ["demo", "real"], "hint": "demo=모의투자, real=실전투자"},
+    {"key": "DRY_RUN", "label": "주문차단", "type": "bool", "hint": "true이면 주문차단 ON 상태로 KIS 주문 API 전송을 막고 기록만 남깁니다."},
+    {"key": "ENABLE_LIVE_TRADING", "label": "실전매매 최종허용", "type": "bool", "hint": "실전주문을 허용하는 최종 안전 스위치입니다."},
+    {"key": "REQUIRE_APPROVAL", "label": "주문승인 필요", "type": "bool"},
     {"key": "SPLIT_N", "label": "Split N", "type": "int"},
     {"key": "STOP_LOSS_PCT", "label": "Stop Loss %", "type": "float"},
     {"key": "TAKE_PROFIT", "label": "Take Profit %", "type": "float"},
@@ -52,7 +57,7 @@ ENV_FIELDS = [
     {"key": "CASH_BUFFER", "label": "Cash Buffer", "type": "float"},
     {"key": "MAX_DAILY_LOSS_PCT", "label": "Max Daily Loss %", "type": "float"},
     {"key": "SCAN_UNIVERSE_SIZE", "label": "Scan Universe Size", "type": "int"},
-    {"key": "KIS_CIRCUIT_COOLDOWN_SECONDS", "label": "KIS Circuit Cooldown Seconds", "type": "int"},
+    {"key": "KIS_CIRCUIT_COOLDOWN_SECONDS", "label": "KIS API 차단 대기초", "type": "int", "hint": "KIS API 오류 후 재시도까지 기다릴 시간(초)입니다. 저장 후 서버 재시작 시 적용됩니다."},
     {"key": "TRADE_DB_PATH", "label": "Trade DB Path", "type": "text"},
     {"key": "ACTIVE_MODEL_VERSION", "label": "Active Model Version", "type": "text"},
     {"key": "SLACK_WEBHOOK_URL", "label": "Slack Webhook URL", "type": "secret"},
@@ -135,8 +140,8 @@ def _account_format_warning(account: str) -> str:
     digits = "".join(char for char in str(account or "") if char.isdigit())
     if not digits:
         return "KISTOCK_ACCOUNT is required"
-    if len(digits) != 10:
-        return "KISTOCK_ACCOUNT must be 10 digits: 8-digit account number + 2-digit product code"
+    if len(digits) not in {8, 10}:
+        return "KISTOCK_ACCOUNT must be 8 digits, or 10 digits including 2-digit product code"
     return ""
 
 
@@ -286,9 +291,18 @@ def _balance_cache_age_seconds(balance_data: dict) -> float | None:
         return None
 
 
+def _run_with_timeout(func, timeout_seconds: float):
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(func)
+    try:
+        return future.result(timeout=timeout_seconds)
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
 def _get_balance_data(api: KIStockAPI, allow_cache: bool = True) -> dict:
+    cached = _load_balance_cache() if allow_cache else None
     if allow_cache:
-        cached = _load_balance_cache()
         if cached is not None:
             age = _balance_cache_age_seconds(cached)
             if age is not None and age < BALANCE_CACHE_TTL_SECONDS:
@@ -302,7 +316,11 @@ def _get_balance_data(api: KIStockAPI, allow_cache: bool = True) -> dict:
                 if age is not None and age < BALANCE_CACHE_TTL_SECONDS:
                     return cached
         try:
-            balance_data = api.get_balance()
+            balance_data = _run_with_timeout(api.get_balance, BALANCE_FETCH_TIMEOUT_SECONDS)
+        except concurrent.futures.TimeoutError:
+            if cached is not None:
+                return cached
+            raise RuntimeError("KIS balance API timed out")
         except KISConfigError:
             if allow_cache:
                 cached = _load_balance_cache()
@@ -372,6 +390,21 @@ def _save_candidate_cache(
         }, ensure_ascii=False),
         encoding="utf-8",
     )
+
+
+def _build_candidate_orders_from_scan(
+    candidates: list[dict], held_count: int, cash: int
+) -> list[dict]:
+    available_slots = trader.MAX_POSITIONS - held_count
+    if available_slots <= 0:
+        return []
+
+    order_candidates = []
+    for candidate in candidates[:available_slots]:
+        cloned = dict(candidate)
+        cloned["limit_price"] = adjust_tick_size(int(cloned.get("current_price") or 0))
+        order_candidates.append(cloned)
+    return PortfolioAllocator().allocate(order_candidates, cash, trader.TOTAL_CAPITAL)
 
 
 def _init_approval_db() -> None:
@@ -492,6 +525,62 @@ def _validate_env_value(key: str, value: object) -> str:
     return value_text
 
 
+def _env_bool_value(values: dict[str, str], key: str, default: bool = False) -> bool:
+    raw = str(values.get(key, str(default))).strip().lower()
+    return raw in {"true", "1", "yes", "on"}
+
+
+def _virtual_env_value(key: str, values: dict[str, str]) -> str:
+    dry_run = _env_bool_value(values, "DRY_RUN", True)
+    trading_env = values.get("TRADING_ENV", "demo")
+    enable_live = _env_bool_value(values, "ENABLE_LIVE_TRADING", False)
+    if key == "ORDER_SUBMISSION_ENABLED":
+        return "true" if (not dry_run and (trading_env == "demo" or enable_live)) else "false"
+    return ""
+
+
+def _expand_virtual_env_updates(updates: dict[str, str]) -> dict[str, str]:
+    expanded = dict(updates)
+    order_submission = expanded.pop("ORDER_SUBMISSION_ENABLED", None)
+
+    if order_submission is not None:
+        expanded["DRY_RUN"] = "false" if _env_bool_value({"value": order_submission}, "value") else "true"
+
+    return expanded
+
+
+def _apply_runtime_env_updates(updates: dict[str, str]) -> None:
+    for key, value in updates.items():
+        if key == "TRADING_ENV":
+            trader.config.trading_env = value
+            trader.TRADING_ENV = value
+        elif key == "DRY_RUN":
+            parsed = _env_bool_value({"value": value}, "value")
+            trader.config.dry_run = parsed
+            trader.DRY_RUN = parsed
+        elif key == "ENABLE_LIVE_TRADING":
+            parsed = _env_bool_value({"value": value}, "value")
+            trader.config.enable_live_trading = parsed
+            trader.ENABLE_LIVE_TRADING = parsed
+
+    trader.REAL_ORDERS_ENABLED = (
+        (not trader.DRY_RUN)
+        and trader.TRADING_ENV == "real"
+        and trader.ENABLE_LIVE_TRADING
+    )
+    trader.ORDER_SUBMISSION_ENABLED = (
+        (not trader.DRY_RUN)
+        and (trader.TRADING_ENV == "demo" or trader.REAL_ORDERS_ENABLED)
+    )
+
+
+def _runtime_order_mode_updates(key: str, enabled: bool) -> dict[str, str]:
+    normalized = key.upper()
+    if normalized == "DRY_RUN":
+        return {"DRY_RUN": "true" if enabled else "false"}
+    raise HTTPException(status_code=400, detail="key must be DRY_RUN")
+
+
 def _serialize_env_value(value: str) -> str:
     if not value or any(char.isspace() for char in value) or "#" in value:
         return json.dumps(value, ensure_ascii=False)
@@ -528,27 +617,27 @@ def _write_env_values(updates: dict[str, str], path: Path = ENV_PATH) -> None:
 
 
 @app.get("/", response_class=FileResponse)
-async def read_root():
+def read_root():
     return FileResponse(WEB_DIR / "templates" / "index.html")
 
 
 @app.get("/finrl", response_class=FileResponse)
-async def read_finrl_dashboard():
+def read_finrl_dashboard():
     return FileResponse(WEB_DIR / "templates" / "finrl.html")
 
 
 @app.get("/vendors", response_class=FileResponse)
-async def read_vendor_dashboard():
+def read_vendor_dashboard():
     return FileResponse(WEB_DIR / "templates" / "vendors.html")
 
 
 @app.get("/ai-dashboard", response_class=FileResponse)
-async def read_ai_dashboard():
+def read_ai_dashboard():
     return FileResponse(WEB_DIR / "templates" / "ai_dashboard.html")
 
 
 @app.get("/env-settings", response_class=FileResponse)
-async def read_env_settings():
+def read_env_settings():
     return FileResponse(WEB_DIR / "templates" / "env_settings.html")
 
 
@@ -597,7 +686,7 @@ def _vendor_status(slug: str, meta: dict) -> dict:
 
 
 @app.get("/api/health")
-async def health():
+def health():
     missing = _required_env_missing()
     account_warning = _account_format_warning(trader.config.kistock_account)
     return {
@@ -618,7 +707,7 @@ async def health():
 
 
 @app.get("/api/config")
-async def get_config():
+def get_config():
     return {
         "trading_env": trader.TRADING_ENV,
         "dry_run": trader.DRY_RUN,
@@ -650,12 +739,12 @@ async def get_config():
 
 
 @app.get("/api/env")
-async def get_env_settings():
+def get_env_settings():
     values = _read_env_values()
     fields = []
     for field in ENV_FIELDS:
         key = field["key"]
-        value = values.get(key, "")
+        value = _virtual_env_value(key, values) if field.get("virtual") else values.get(key, "")
         item = {
             "key": key,
             "label": field["label"],
@@ -663,6 +752,7 @@ async def get_env_settings():
             "options": field.get("options", []),
             "hint": field.get("hint", ""),
             "secret": field["type"] == "secret",
+            "virtual": bool(field.get("virtual")),
             "has_value": bool(value),
             "value": value,
             "masked": "",
@@ -677,7 +767,7 @@ async def get_env_settings():
 
 
 @app.post("/api/env")
-async def update_env_settings(payload: dict = Body(...)):
+def update_env_settings(payload: dict = Body(...)):
     raw_updates = payload.get("values")
     if not isinstance(raw_updates, dict):
         raise HTTPException(status_code=400, detail="values must be an object")
@@ -692,6 +782,7 @@ async def update_env_settings(payload: dict = Body(...)):
         updates[key] = _validate_env_value(key, value)
 
     if updates:
+        updates = _expand_virtual_env_updates(updates)
         _write_env_values(updates)
     return {
         "ok": True,
@@ -701,20 +792,40 @@ async def update_env_settings(payload: dict = Body(...)):
 
 
 @app.post("/api/circuit-breaker/reset")
-async def reset_circuit_breaker():
+def reset_circuit_breaker():
     KIStockAPI.reset_circuit()
     return {"ok": True, "circuit_breaker": KIStockAPI.circuit_status()}
 
 
 @app.post("/api/auto-approval")
-async def set_auto_approval(payload: dict = Body(...)):
+def set_auto_approval(payload: dict = Body(...)):
     enabled = bool(payload.get("enabled"))
     _save_auto_approval(enabled)
-    return {"ok": True, "enabled": enabled}
+    processed = _auto_approve_pending_approvals() if enabled else []
+    return {"ok": True, "enabled": enabled, "processed": processed, "processed_count": len(processed)}
+
+
+@app.post("/api/runtime/order-mode")
+def set_runtime_order_mode(payload: dict = Body(...)):
+    key = str(payload.get("key", "")).strip()
+    enabled = bool(payload.get("enabled"))
+    updates = _runtime_order_mode_updates(key, enabled)
+    _write_env_values(updates, ENV_PATH)
+    _apply_runtime_env_updates(updates)
+    return {
+        "ok": True,
+        "updated": sorted(updates.keys()),
+        "trading_env": trader.TRADING_ENV,
+        "dry_run": trader.DRY_RUN,
+        "enable_live_trading": trader.ENABLE_LIVE_TRADING,
+        "order_submission_enabled": trader.ORDER_SUBMISSION_ENABLED,
+        "real_orders_enabled": trader.REAL_ORDERS_ENABLED,
+        "requires_restart": False,
+    }
 
 
 @app.get("/api/balance")
-async def get_balance():
+def get_balance():
     missing = _required_env_missing()
     if missing:
         if "KISTOCK_ACCOUNT_FORMAT" in missing:
@@ -732,12 +843,20 @@ async def get_balance():
         return parsed
     except SystemExit as e:
         raise HTTPException(status_code=502, detail=f"KIS API initialization failed: {e}") from e
+    except KISAccountError as e:
+        raise HTTPException(status_code=503, detail=f"KIS account setting is invalid. Check KISTOCK_ACCOUNT: {e}") from e
+    except KISRateLimitError as e:
+        raise HTTPException(status_code=429, detail=f"KIS API rate limit exceeded. Retry shortly: {e}") from e
+    except RuntimeError as e:
+        if "timed out" in str(e):
+            raise HTTPException(status_code=504, detail=f"KIS balance API timed out after {BALANCE_FETCH_TIMEOUT_SECONDS:g}s") from e
+        raise HTTPException(status_code=502, detail=f"KIS API request failed: {e}") from e
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"KIS API request failed: {e}") from e
 
 
 @app.get("/api/signals")
-async def get_signals():
+def get_signals():
     missing = _required_env_missing()
     if missing:
         raise HTTPException(status_code=503, detail=f"Missing environment variables: {', '.join(missing)}")
@@ -775,7 +894,7 @@ async def get_signals():
 
 
 @app.get("/api/candidates")
-async def get_candidates(min_score: int = 2):
+def get_candidates(min_score: int = 2):
     if min_score < 1:
         raise HTTPException(status_code=400, detail="min_score must be greater than 0")
 
@@ -795,7 +914,7 @@ async def get_candidates(min_score: int = 2):
         result = trader.find_candidates(held_symbols, universe=universe, min_score=min_score)
         candidates = result["candidates"]
         scan_summary = result["scan_summary"]
-        orders = trader.build_orders(candidates, api.get_quote, len(held_symbols), parsed["cash"])
+        orders = _build_candidate_orders_from_scan(candidates, len(held_symbols), parsed["cash"])
         order_by_symbol = {order["ticker"]: order for order in orders}
         rows = []
         for candidate in candidates:
@@ -836,7 +955,7 @@ async def get_candidates(min_score: int = 2):
 
 
 @app.get("/api/ai-allocation")
-async def get_ai_allocation():
+def get_ai_allocation():
     missing = _required_env_missing()
     if missing:
         raise HTTPException(status_code=503, detail=f"Missing environment variables: {', '.join(missing)}")
@@ -892,7 +1011,7 @@ def _holding_history(api: KIStockAPI, parsed: dict, n: int = 120) -> list[dict]:
 
 
 @app.get("/api/portfolio-optimizer")
-async def get_portfolio_optimizer():
+def get_portfolio_optimizer():
     missing = _required_env_missing()
     if missing:
         raise HTTPException(status_code=503, detail=f"Missing environment variables: {', '.join(missing)}")
@@ -907,24 +1026,24 @@ async def get_portfolio_optimizer():
 
 
 @app.get("/api/finrl/status")
-async def get_finrl_status():
+def get_finrl_status():
     return _vendor_status("finrl", VENDOR_PROJECTS["finrl"])
 
 
 @app.get("/api/vendors")
-async def get_vendors():
+def get_vendors():
     return {"vendors": [_vendor_status(slug, meta) for slug, meta in VENDOR_PROJECTS.items()]}
 
 
 @app.get("/api/vendors/{slug}")
-async def get_vendor(slug: str):
+def get_vendor(slug: str):
     if slug not in VENDOR_PROJECTS:
         raise HTTPException(status_code=404, detail="vendor not found")
     return _vendor_status(slug, VENDOR_PROJECTS[slug])
 
 
 @app.get("/api/finrl/pipeline")
-async def get_finrl_pipeline():
+def get_finrl_pipeline():
     return {
         "pipeline": [
             {
@@ -965,7 +1084,7 @@ async def get_finrl_pipeline():
 
 
 @app.get("/api/approvals")
-async def get_approvals(limit: int = 50):
+def get_approvals(limit: int = 50):
     if limit < 1:
         raise HTTPException(status_code=400, detail="limit must be greater than 0")
     limit = min(limit, 200)
@@ -981,7 +1100,7 @@ async def get_approvals(limit: int = 50):
 
 
 @app.post("/api/approvals")
-async def create_approval(payload: dict = Body(...)):
+def create_approval(payload: dict = Body(...)):
     action = str(payload.get("action", "")).lower()
     if action not in {"buy", "sell"}:
         raise HTTPException(status_code=400, detail="action must be buy or sell")
@@ -1011,6 +1130,10 @@ async def create_approval(payload: dict = Body(...)):
             (now, now, symbol, name, action, qty, price, reason, source),
         )
         approval_id = cursor.lastrowid
+    if _auto_approval_enabled():
+        result = _approve_pending_approval(approval_id, "자동승인")
+        result["auto_approved"] = True
+        return result
     return {"id": approval_id, "status": "pending"}
 
 
@@ -1027,8 +1150,28 @@ def _load_pending_approval(approval_id: int) -> dict:
     return item
 
 
-@app.post("/api/approvals/{approval_id}/approve")
-async def approve_order(approval_id: int):
+def _pending_approval_ids(limit: int = 200) -> list[int]:
+    _init_approval_db()
+    with trader.connect_db() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id FROM approvals WHERE status = 'pending' ORDER BY id ASC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [int(row["id"]) for row in rows]
+
+
+def _auto_approve_pending_approvals(limit: int = 200) -> list[dict]:
+    results = []
+    for approval_id in _pending_approval_ids(limit):
+        try:
+            results.append(_approve_pending_approval(approval_id, "자동승인"))
+        except HTTPException:
+            continue
+    return results
+
+
+def _approve_pending_approval(approval_id: int, approval_label: str = "수동승인") -> dict:
     item = _load_pending_approval(approval_id)
     try:
         api = _get_api()
@@ -1065,7 +1208,7 @@ async def approve_order(approval_id: int):
         _slack_order(
             item["name"], item["symbol"], item["action"],
             item["qty"], item["price"],
-            f"[대시보드 수동승인] {item.get('reason', '')}",
+            f"[대시보드 {approval_label}] {item.get('reason', '')}",
             status == "executed",
             indicators,
         )
@@ -1075,8 +1218,13 @@ async def approve_order(approval_id: int):
     return {"id": approval_id, "status": status, "response_msg": response_msg}
 
 
+@app.post("/api/approvals/{approval_id}/approve")
+def approve_order(approval_id: int):
+    return _approve_pending_approval(approval_id, "수동승인")
+
+
 @app.post("/api/approvals/{approval_id}/reject")
-async def reject_order(approval_id: int):
+def reject_order(approval_id: int):
     _load_pending_approval(approval_id)
     now = trader.datetime.now(trader.KST).strftime("%Y-%m-%d %H:%M:%S")
     with trader.connect_db() as conn:
@@ -1098,17 +1246,26 @@ def fetch_cloud_trades():
         return [dict(t) for t in _cloud_trades_cache]
         
     try:
-        subprocess.run(["git", "fetch", "origin", "database:database"], check=False, capture_output=True)
-        output = subprocess.check_output(["git", "show", "origin/database:trades.json"], stderr=subprocess.STDOUT).decode('utf-8')
+        subprocess.run(
+            ["git", "fetch", "origin", "database:database"],
+            check=False,
+            capture_output=True,
+            timeout=GIT_FETCH_TIMEOUT_SECONDS,
+        )
+        output = subprocess.check_output(
+            ["git", "show", "origin/database:trades.json"],
+            stderr=subprocess.STDOUT,
+            timeout=GIT_FETCH_TIMEOUT_SECONDS,
+        ).decode("utf-8")
         trades = json.loads(output)
         
         _cloud_trades_cache = trades
         _cloud_trades_cache_time = time.time()
         return [dict(t) for t in trades]
     except Exception as e:
-        import traceback
-        err_msg = traceback.format_exc()
-        return [{"ts": "-", "symbol": "ERROR", "name": f"ERROR: {err_msg}", "action": "buy", "qty": 0, "price": 0, "reason": str(e), "ok": 0}]
+        if _cloud_trades_cache is not None:
+            return [dict(t) for t in _cloud_trades_cache]
+        return []
 
 
 def _load_merged_trades() -> list[dict]:
@@ -1236,7 +1393,7 @@ def _build_periodic_performance(trades: list[dict]) -> dict:
 
 
 @app.post("/api/trades/sync")
-async def sync_trades():
+def sync_trades():
     if trader.DRY_RUN:
         raise HTTPException(status_code=400, detail="모의 실행(DRY_RUN) 모드에서는 증권사 계좌 동기화를 사용할 수 없습니다.")
     try:
@@ -1340,7 +1497,7 @@ async def sync_trades():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/trades")
-async def get_trades(limit: int = 50):
+def get_trades(limit: int = 50):
     try:
         cloud_trades = fetch_cloud_trades() or []
         local_trades = []
@@ -1374,7 +1531,7 @@ async def get_trades(limit: int = 50):
 
 
 @app.get("/api/performance/periodic")
-async def get_periodic_performance():
+def get_periodic_performance():
     try:
         trades = _load_merged_trades()
         return _build_periodic_performance(trades)
@@ -1383,7 +1540,7 @@ async def get_periodic_performance():
 
 
 @app.get("/api/performance")
-async def get_performance():
+def get_performance():
     try:
         cloud_trades = fetch_cloud_trades() or []
         local_trades = []
@@ -1536,7 +1693,7 @@ async def get_performance():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/risk/status")
-async def get_risk_status():
+def get_risk_status():
     try:
         api = _get_api()
         balance_data = _get_balance_data(api, allow_cache=True)
@@ -1563,7 +1720,7 @@ async def get_risk_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/decisions/history")
-async def get_decision_history(limit: int = 50):
+def get_decision_history(limit: int = 50):
     try:
         with trader.connect_db() as conn:
             conn.row_factory = sqlite3.Row
@@ -1580,7 +1737,7 @@ async def get_decision_history(limit: int = 50):
         return {"decisions": []}
 
 @app.post("/api/system/kill")
-async def activate_kill_switch():
+def activate_kill_switch():
     kill_file = Path(".runtime/kill_switch.json")
     kill_file.parent.mkdir(parents=True, exist_ok=True)
     with open(kill_file, "w") as f:
@@ -1588,8 +1745,9 @@ async def activate_kill_switch():
     return {"ok": True, "msg": "Kill switch activated"}
 
 @app.post("/api/system/unkill")
-async def deactivate_kill_switch():
+def deactivate_kill_switch():
     kill_file = Path(".runtime/kill_switch.json")
     if kill_file.exists():
         kill_file.unlink()
     return {"ok": True, "msg": "Kill switch deactivated"}
+

@@ -70,23 +70,19 @@
                         <strong id="runtime-env">-</strong>
                     </div>
                     <div>
-                        <span class="label">주문 모의 실행</span>
-                        <strong id="runtime-dry-run">-</strong>
-                    </div>
-                    <div>
-                        <span class="label">주문 전송</span>
-                        <strong id="runtime-order">-</strong>
-                    </div>
-                    <div>
                         <span class="label">실전 주문</span>
                         <strong id="runtime-real">-</strong>
                     </div>
                     <div>
-                        <span class="label">API 차단기</span>
+                        <span class="label">최종 주문전송</span>
+                        <strong id="runtime-order">-</strong>
+                    </div>
+                    <div>
+                        <span class="label">주문 차단</span>
                         <div style="display: flex; align-items: center; gap: 8px; margin-top: 5px;">
-                            <strong id="runtime-circuit">-</strong>
-                            <button type="button" id="btn-reset-circuit" class="button-ghost"
-                                style="padding: 4px 8px; font-size: 0.75rem;">초기화</button>
+                            <strong id="runtime-dry-run">-</strong>
+                            <button type="button" id="btn-dry-run" class="button-ghost"
+                                style="padding: 4px 8px; font-size: 0.75rem;">전환</button>
                         </div>
                     </div>
                     <div>
@@ -229,6 +225,7 @@
                                     <th>종목</th>
                                     <th>수량</th>
                                     <th>가격</th>
+                                    <th>예상금액</th>
                                     <th>상태</th>
                                     <th>처리</th>
                                 </tr>
@@ -411,7 +408,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="/static/js/app.js?v=15"></script>
+    <script src="/static/js/app.js?v=27"></script>
 </body>
 
 </html>
