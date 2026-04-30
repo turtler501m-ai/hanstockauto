@@ -27,9 +27,14 @@ if command -v taskkill.exe >/dev/null 2>&1; then
     )
     if [ -n "$PIDS" ]; then
         for PID in $PIDS; do
-            taskkill.exe /PID "$PID" /F >/dev/null 2>&1 \
-                && echo "[restart] stopped PID $PID" \
-                || echo "[restart] stop skipped PID $PID"
+            powershell.exe -NoProfile -Command "Stop-Process -Id $PID -Force -ErrorAction Stop" >/dev/null 2>&1 \
+                || taskkill.exe /PID "$PID" /F >/dev/null 2>&1 \
+                || true
+            if powershell.exe -NoProfile -Command "if (Get-Process -Id $PID -ErrorAction SilentlyContinue) { exit 1 }" >/dev/null 2>&1; then
+                echo "[restart] stopped PID $PID"
+            else
+                echo "[restart] stop skipped PID $PID"
+            fi
         done
     else
         echo "[restart] no listening server found"
@@ -38,7 +43,12 @@ else
     pkill -f "uvicorn src.dashboard" 2>/dev/null || true
 fi
 
-sleep 2
+for _ in 1 2 3 4 5; do
+    if powershell.exe -NoProfile -Command "if (Get-NetTCPConnection -State Listen -LocalPort ${PORT} -ErrorAction SilentlyContinue) { exit 1 }" >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
 
 CACHE=".runtime/candidate_snapshot.json"
 if [ -f "$CACHE" ]; then
