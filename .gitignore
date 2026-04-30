@@ -5,3 +5,4 @@ logs/
 *.log
 .runtime/
 .DS_Store
+data/kis_token.json
