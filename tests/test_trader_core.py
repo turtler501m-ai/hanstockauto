@@ -156,6 +156,20 @@ class TraderCoreTests(unittest.TestCase):
         self.assertFalse(status["opened"])
         self.assertEqual(status["error_count"], 0)
 
+    def test_circuit_breaker_records_api_result(self):
+        KIStockAPI.reset_circuit()
+        api = KIStockAPI.__new__(KIStockAPI)
+
+        api._record_result({"rt_cd": "1"})
+        status = KIStockAPI.circuit_status()
+        self.assertEqual(status["error_count"], 1)
+        self.assertFalse(status["opened"])
+
+        api._record_result({"rt_cd": "0"})
+        status = KIStockAPI.circuit_status()
+        self.assertEqual(status["error_count"], 0)
+        self.assertFalse(status["opened"])
+
 
 if __name__ == "__main__":
     unittest.main()

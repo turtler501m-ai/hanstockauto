@@ -59,6 +59,11 @@ header {
     font-size: 0.875rem;
 }
 
+button.nav-button {
+    min-height: auto;
+    font-family: inherit;
+}
+
 h1 {
     font-size: 2.05rem;
     font-weight: 700;
@@ -220,11 +225,6 @@ h1 .highlight {
     grid-row: 1 / 2;
 }
 
-.panel-trades {
-    grid-column: 1 / 3;
-    grid-row: 8 / 9;
-}
-
 .panel-runtime {
     margin-bottom: 1.5rem;
 }
@@ -257,6 +257,11 @@ h1 .highlight {
 .panel-optimizer {
     grid-column: 1 / 3;
     grid-row: 7 / 8;
+}
+
+.panel-trades {
+    grid-column: 1 / 3;
+    grid-row: 8 / 9;
 }
 
 .split-header {
@@ -304,11 +309,98 @@ button:disabled {
     flex-wrap: wrap;
 }
 
+.sell-controls {
+    display: grid;
+    grid-template-columns: minmax(74px, 96px) auto;
+    gap: 0.45rem;
+    align-items: center;
+}
+
+.sell-qty-input {
+    width: 100%;
+    min-height: 34px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.72);
+    color: var(--text-color);
+    padding: 0.35rem 0.55rem;
+    font: inherit;
+}
+
+.sell-controls .button-row {
+    gap: 0.35rem;
+}
+
 .runtime-grid,
 .settings-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 1rem;
+}
+
+.env-form {
+    display: grid;
+    gap: 1rem;
+}
+
+.env-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+}
+
+.env-field {
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px;
+    padding: 0.85rem;
+    background: rgba(255,255,255,0.025);
+}
+
+.env-field label {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin-bottom: 0.45rem;
+}
+
+.env-field input,
+.env-field select {
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.72);
+    color: var(--text-color);
+    padding: 0.45rem 0.6rem;
+    font: inherit;
+}
+
+.env-field small {
+    display: block;
+    margin-top: 0.35rem;
+    color: var(--text-muted);
+    min-height: 1rem;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.env-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.env-page-panel {
+    width: 100%;
+}
+
+.env-page-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
 }
 
 .runtime-grid > div,
@@ -343,6 +435,18 @@ button:disabled {
     overflow-x: auto;
 }
 
+.panel-approvals .table-responsive.is-scrollable {
+    max-height: 520px;
+    overflow-y: auto;
+}
+
+.panel-approvals .table-responsive.is-scrollable thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: rgba(15, 23, 42, 0.96);
+}
+
 table {
     width: 100%;
     border-collapse: collapse;
@@ -369,6 +473,15 @@ tbody tr:hover {
     background: rgba(255, 255, 255, 0.03);
 }
 
+.row-highlight {
+    animation: rowFlash 2.5s ease-out;
+}
+
+@keyframes rowFlash {
+    0% { background: rgba(245, 158, 11, 0.24); }
+    100% { background: transparent; }
+}
+
 .text-success { color: var(--success) !important; }
 .text-danger { color: var(--danger) !important; }
 
@@ -391,6 +504,70 @@ tbody tr:hover {
     display: flex;
     justify-content: center;
     align-items: center;
+}
+
+.performance-validation {
+    margin: 1.25rem 0 1.4rem;
+    padding: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(2, 6, 23, 0.22);
+}
+
+.tab-controls {
+    display: inline-flex;
+    gap: 0.35rem;
+    padding: 0.25rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.72);
+}
+
+.tab-button {
+    min-width: 64px;
+    min-height: 34px;
+    border-color: transparent;
+    background: transparent;
+    color: var(--text-muted);
+    padding: 0.35rem 0.75rem;
+}
+
+.tab-button.active {
+    border-color: rgba(59, 130, 246, 0.45);
+    background: rgba(59, 130, 246, 0.22);
+    color: var(--text-color);
+}
+
+.performance-chart-frame {
+    position: relative;
+    height: 280px;
+    margin-top: 1rem;
+}
+
+.performance-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.performance-kpi {
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.56);
+    padding: 0.8rem 0.9rem;
+}
+
+.performance-kpi span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    margin-bottom: 0.22rem;
+}
+
+.performance-kpi strong {
+    display: block;
+    font-size: 1.05rem;
 }
 
 .symbol-name {
@@ -443,6 +620,33 @@ tbody tr:hover {
     position: sticky;
     top: 0;
     background: var(--surface);
+    z-index: 1;
+}
+
+.panel-trades .trades-scroll {
+    max-height: 620px;
+    overflow-y: auto;
+}
+
+.panel-trades .trades-scroll::-webkit-scrollbar {
+    width: 6px;
+}
+
+.panel-trades .trades-scroll::-webkit-scrollbar-track {
+    background: rgba(255,255,255,0.04);
+    border-radius: 3px;
+}
+
+.panel-trades .trades-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.18);
+    border-radius: 3px;
+}
+
+.panel-trades .trades-scroll thead th {
+    position: sticky;
+    top: 0;
+    background: var(--card-bg);
+    backdrop-filter: blur(12px);
     z-index: 1;
 }
 
@@ -627,8 +831,17 @@ tbody tr:hover {
     .main-grid {
         grid-template-columns: 1fr;
     }
+
+    .env-page-grid {
+        grid-template-columns: 1fr;
+    }
+
     .panel-holdings, .panel-chart, .panel-trades, .panel-settings, .panel-signals, .panel-candidates, .panel-approvals, .panel-ai, .panel-optimizer {
         grid-column: 1 / 2;
+    }
+
+    .performance-kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
@@ -662,5 +875,9 @@ tbody tr:hover {
 
     .control-center button {
         width: 100%;
+    }
+
+    .performance-kpis {
+        grid-template-columns: 1fr;
     }
 }

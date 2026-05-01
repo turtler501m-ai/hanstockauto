@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>한스톡 환경설정</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css?v=16">
+</head>
+
+<body>
+    <div class="dashboard-container">
+        <header>
+            <div>
+                <p class="eyebrow">KIS 환경설정</p>
+                <h1>환경설정 <span class="highlight">.env</span></h1>
+            </div>
+            <div class="header-actions">
+                <a class="nav-button" href="/">대시보드</a>
+                <a class="nav-button" href="/ai-dashboard">신규 AI 대시보드</a>
+            </div>
+        </header>
+
+        <main>
+            <section class="status-banner" id="status-banner" hidden></section>
+
+            <section class="card glass env-page-panel">
+                <div class="panel-header split-header">
+                    <div>
+                        <h2>환경설정</h2>
+                        <p class="section-help">KIS 계좌, 실행 모드, 전략 파라미터를 저장합니다. 저장 후 서버를 재시작해야 적용됩니다.</p>
+                    </div>
+                    <button type="button" id="btn-env-reload" class="button-ghost">다시 불러오기</button>
+                </div>
+                <form id="env-form" class="env-form">
+                    <div class="env-grid env-page-grid" id="env-grid"></div>
+                    <div class="env-actions">
+                        <span class="time-muted" id="env-meta">-</span>
+                        <button type="submit" id="btn-env-save">저장</button>
+                    </div>
+                </form>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/js/env_settings.js?v=5"></script>
+</body>
+
+</html>

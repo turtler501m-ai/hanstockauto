@@ -1,0 +1,86 @@
+[
+  {
+    "ts": "2026-04-30 11:15:04",
+    "symbol": "028260",
+    "name": "삼성물산",
+    "action": "buy",
+    "qty": 28,
+    "price": 299000,
+    "reason": "RSI pullback 48, MACD positive, trend pullback RSI2=0, SMA20>SMA60",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 1
+  },
+  {
+    "ts": "2026-04-30 11:15:04",
+    "symbol": "005380",
+    "name": "현대차",
+    "action": "buy",
+    "qty": 12,
+    "price": 539000,
+    "reason": "MACD positive, trend pullback RSI2=6, SMA20>SMA60",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 1
+  },
+  {
+    "ts": "2026-04-30 11:15:04",
+    "symbol": "011790",
+    "name": "SKC",
+    "action": "buy",
+    "qty": 57,
+    "price": 119200,
+    "reason": "MACD positive, trend pullback RSI2=0, SMA20>SMA60",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 1
+  },
+  {
+    "ts": "2026-04-30 11:43:44",
+    "symbol": "028260",
+    "name": "삼성물산",
+    "action": "buy",
+    "qty": 28,
+    "price": 300000,
+    "reason": "RSI pullback 49, MACD positive, trend pullback RSI2=0, SMA20>SMA60",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 0
+  },
+  {
+    "ts": "2026-04-30 11:44:10",
+    "symbol": "005380",
+    "name": "현대차",
+    "action": "buy",
+    "qty": 12,
+    "price": 541000,
+    "reason": "MACD positive, trend pullback RSI2=6, SMA20>SMA60",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 0
+  },
+  {
+    "ts": "2026-04-30 11:44:13",
+    "symbol": "003670",
+    "name": "포스코퓨처엠",
+    "action": "buy",
+    "qty": 27,
+    "price": 253000,
+    "reason": "MACD positive, trend pullback RSI2=0, SMA20>SMA60",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 0
+  },
+  {
+    "ts": "2026-04-30 11:44:29",
+    "symbol": "066570",
+    "name": "LG전자",
+    "action": "buy",
+    "qty": 36,
+    "price": 142900,
+    "reason": "MACD positive, volume spike, SMA20>SMA60",
+    "ok": 1,
+    "env": "demo",
+    "dry_run": 0
+  }
+]
