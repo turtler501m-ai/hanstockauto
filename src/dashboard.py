@@ -18,7 +18,6 @@ from src import trader  # noqa: E402
 from src.trader import KIStockAPI  # noqa: E402
 from src.api.kis_api import KISAccountError, KISConfigError, KISRateLimitError  # noqa: E402
 from src.notifier.slack import slack_order as _slack_order, slack_error as _slack_error  # noqa: E402
-from src.strategy.allocator import PortfolioAllocator  # noqa: E402
 from src.strategy.seven_split import adjust_tick_size  # noqa: E402
 
 
@@ -392,19 +391,116 @@ def _save_candidate_cache(
     )
 
 
-def _build_candidate_orders_from_scan(
-    candidates: list[dict], held_count: int, cash: int
-) -> list[dict]:
-    available_slots = trader.MAX_POSITIONS - held_count
-    if available_slots <= 0:
-        return []
+def build_dashboard_signals(api, parsed: dict) -> list[dict]:
+    signals = []
+    for holding in parsed["holdings"]:
+        daily = api.get_daily(holding["symbol"], n=60)
+        signal = trader.generate_signal(holding["_raw"], daily)
+        indicators = signal.get("indicators", {})
+        signals.append({
+            "symbol": holding["symbol"],
+            "name": holding["name"],
+            "qty": holding["qty"],
+            "price": holding["price"],
+            "rt": holding["rt"],
+            "action": signal.get("action", "hold"),
+            "signal_qty": signal.get("qty", 0),
+            "signal_price": signal.get("price", 0),
+            "reason": signal.get("reason", ""),
+            "rsi": indicators.get("rsi"),
+            "rsi2": indicators.get("rsi2"),
+            "sma20": indicators.get("sma20"),
+            "sma60": indicators.get("sma60"),
+            "bb_lo": indicators.get("bb_lo"),
+            "bb_hi": indicators.get("bb_hi"),
+            "strategy_score": indicators.get("strategy_score"),
+            "macd_hist": indicators.get("macd_hist"),
+        })
+    return signals
 
-    order_candidates = []
-    for candidate in candidates[:available_slots]:
-        cloned = dict(candidate)
-        cloned["limit_price"] = adjust_tick_size(int(cloned.get("current_price") or 0))
-        order_candidates.append(cloned)
-    return PortfolioAllocator().allocate(order_candidates, cash, trader.TOTAL_CAPITAL)
+
+def build_dashboard_candidates(api, parsed: dict, min_score: int = 2) -> dict:
+    held_symbols = {holding["symbol"] for holding in parsed["holdings"]}
+    universe = trader.build_scan_universe(api, held_symbols)
+    scan_result = trader.find_candidates(held_symbols, universe=universe, min_score=min_score)
+    candidates = scan_result.get("candidates", [])
+    orders = trader.build_orders(candidates, api.get_quote, len(parsed["holdings"]), parsed["cash"])
+    order_by_ticker = {order["ticker"]: order for order in orders}
+
+    rows = []
+    for candidate in candidates:
+        order = order_by_ticker.get(candidate["ticker"], {})
+        rows.append({
+            "ticker": candidate["ticker"],
+            "name": candidate.get("name", candidate["ticker"]),
+            "current_price": candidate["current_price"],
+            "score": candidate["score"],
+            "reasons": candidate["reasons"],
+            "rsi": candidate.get("rsi"),
+            "rsi2": candidate.get("rsi2"),
+            "macd_hist": candidate.get("macd_hist"),
+            "sma20": candidate.get("sma20"),
+            "sma60": candidate.get("sma60"),
+            "bb_lo": candidate.get("bb_lo"),
+            "bb_hi": candidate.get("bb_hi"),
+            "planned_qty": order.get("quantity", 0),
+            "limit_price": order.get("limit_price", 0),
+            "estimated_cost": order.get("estimated_cost", 0),
+            "universe_size": len(universe),
+        })
+
+    return {
+        "candidates": rows,
+        "universe_size": len(universe),
+        "scanned": scan_result.get("scanned", 0),
+        "min_score": min_score,
+        "scan_summary": scan_result.get("scan_summary", []),
+        "scan_error": scan_result.get("scan_error"),
+    }
+
+
+def _build_candidate_orders_from_scan(candidates: list, *, held_count: int = 0, cash: int) -> list:
+    """Build candidate orders using scan prices (no live quote lookup)."""
+    available_slots = max(0, trader.MAX_POSITIONS - held_count)
+    orders = []
+    remaining_cash = cash
+    for cand in candidates[:available_slots]:
+        price = int(cand.get("current_price", 0) or 0)
+        if price <= 0:
+            continue
+        limit_price = adjust_tick_size(price)
+        if limit_price <= 0:
+            continue
+        qty = remaining_cash // limit_price
+        if qty <= 0:
+            continue
+        estimated_cost = qty * limit_price
+        orders.append({
+            "ticker": cand["ticker"],
+            "limit_price": limit_price,
+            "quantity": qty,
+            "estimated_cost": estimated_cost,
+        })
+        remaining_cash -= estimated_cost
+    return orders
+
+
+def build_dashboard_execution_plan() -> dict:
+    api = _get_api()
+    balance_data = _get_balance_data(api)
+    parsed = _parse_balance(balance_data)
+    runtime_bundle = trader.build_runtime_plan(api, balance_data)
+    return {
+        "mode": "dashboard",
+        "plan": runtime_bundle["plan"],
+        "cash": parsed["cash"],
+        "remaining_cash": runtime_bundle["remaining_cash"],
+        "total_eval": parsed["total_eval"],
+        "pnl": parsed["pnl"],
+        "daily_loss_halt": runtime_bundle["daily_loss_halt"],
+        "scanned": runtime_bundle["candidate_scan"]["scanned"],
+        "scan_error": runtime_bundle["candidate_scan"]["scan_error"],
+    }
 
 
 def _init_approval_db() -> None:
@@ -856,7 +952,7 @@ def get_balance():
 
 
 @app.get("/api/signals")
-def get_signals():
+async def get_signals():
     missing = _required_env_missing()
     if missing:
         raise HTTPException(status_code=503, detail=f"Missing environment variables: {', '.join(missing)}")
@@ -864,37 +960,13 @@ def get_signals():
     try:
         api = _get_api()
         parsed = _parse_balance(_get_balance_data(api))
-        signals = []
-        for holding in parsed["holdings"]:
-            daily = api.get_daily(holding["symbol"], n=60)
-            signal = trader.generate_signal(holding["_raw"], daily)
-            indicators = signal.get("indicators", {})
-            signals.append({
-                "symbol": holding["symbol"],
-                "name": holding["name"],
-                "qty": holding["qty"],
-                "price": holding["price"],
-                "rt": holding["rt"],
-                "action": signal.get("action", "hold"),
-                "signal_qty": signal.get("qty", 0),
-                "signal_price": signal.get("price", 0),
-                "reason": signal.get("reason", ""),
-                "rsi": indicators.get("rsi"),
-                "rsi2": indicators.get("rsi2"),
-                "sma20": indicators.get("sma20"),
-                "sma60": indicators.get("sma60"),
-                "bb_lo": indicators.get("bb_lo"),
-                "bb_hi": indicators.get("bb_hi"),
-                "strategy_score": indicators.get("strategy_score"),
-                "macd_hist": indicators.get("macd_hist"),
-            })
-        return {"signals": signals}
+        return {"signals": build_dashboard_signals(api, parsed)}
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Signal analysis failed: {e}") from e
 
 
 @app.get("/api/candidates")
-def get_candidates(min_score: int = 2):
+async def get_candidates(min_score: int = 2):
     if min_score < 1:
         raise HTTPException(status_code=400, detail="min_score must be greater than 0")
 
@@ -909,49 +981,26 @@ def get_candidates(min_score: int = 2):
     try:
         api = _get_api()
         parsed = _parse_balance(_get_balance_data(api))
-        held_symbols = {holding["symbol"] for holding in parsed["holdings"]}
-        universe = trader.build_scan_universe(api, held_symbols)
-        result = trader.find_candidates(held_symbols, universe=universe, min_score=min_score)
-        candidates = result["candidates"]
-        scan_summary = result["scan_summary"]
-        orders = _build_candidate_orders_from_scan(candidates, len(held_symbols), parsed["cash"])
-        order_by_symbol = {order["ticker"]: order for order in orders}
-        rows = []
-        for candidate in candidates:
-            order = order_by_symbol.get(candidate["ticker"], {})
-            rows.append({
-                "ticker": candidate["ticker"],
-                "name": candidate.get("name", candidate["ticker"]),
-                "current_price": candidate["current_price"],
-                "score": candidate["score"],
-                "reasons": candidate["reasons"],
-                "rsi": candidate.get("rsi"),
-                "rsi2": candidate.get("rsi2"),
-                "macd_hist": candidate.get("macd_hist"),
-                "sma20": candidate.get("sma20"),
-                "sma60": candidate.get("sma60"),
-                "bb_lo": candidate.get("bb_lo"),
-                "bb_hi": candidate.get("bb_hi"),
-                "planned_qty": order.get("quantity", 0),
-                "limit_price": order.get("limit_price", 0),
-                "estimated_cost": order.get("estimated_cost", 0),
-                "universe_size": len(universe),
-            })
-        scanned = result["scanned"]
-        scan_error = result.get("scan_error")
+        payload = build_dashboard_candidates(api, parsed, min_score=min_score)
         # scanned=0 은 yfinance 실패 등 데이터 수신 오류 — 캐시하지 않음
-        if scanned > 0:
-            _save_candidate_cache(min_score, rows, scan_summary, scanned)
-        return {
-            "candidates": rows,
-            "universe_size": len(universe),
-            "scanned": scanned,
-            "min_score": min_score,
-            "scan_summary": scan_summary,
-            "scan_error": scan_error,
-        }
+        if payload["scanned"] > 0:
+            _save_candidate_cache(
+                min_score, payload["candidates"], payload["scan_summary"], payload["scanned"]
+            )
+        return payload
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Candidate scan failed: {e}") from e
+
+
+@app.get("/api/execution-plan")
+async def get_execution_plan():
+    missing = _required_env_missing()
+    if missing:
+        raise HTTPException(status_code=503, detail=f"Missing environment variables: {', '.join(missing)}")
+    try:
+        return build_dashboard_execution_plan()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Execution plan failed: {e}") from e
 
 
 @app.get("/api/ai-allocation")

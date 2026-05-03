@@ -1091,6 +1091,92 @@ async function renderTrades() {
     }
 }
 
+async function renderExecutionPlan() {
+    const btn = document.getElementById('btn-execution-plan');
+    setButtonBusy(btn, true);
+    setTableMessage('#table-execution-plan tbody', 8, '실행 계획 불러오는 중...');
+    try {
+        const data = await fetchJson('/api/execution-plan');
+        const plan = data.plan || [];
+
+        const summaryEl = document.getElementById('execution-plan-summary');
+        if (summaryEl) {
+            const haltBadge = data.daily_loss_halt
+                ? ' <span class="badge badge-sell">손실한도 초과 — 신규매수 중단</span>'
+                : '';
+            summaryEl.innerHTML =
+                `<span>모드: <strong>${escapeHtml(data.mode || 'live')}</strong></span>` +
+                ` <span>예수금: <strong>${formatCurrency(data.cash)}</strong></span>` +
+                ` <span>잔여예수금: <strong>${formatCurrency(data.remaining_cash)}</strong></span>` +
+                ` <span>스캔: <strong>${data.scanned || 0}종목</strong></span>` +
+                haltBadge;
+        }
+
+        const tbody = document.querySelector('#table-execution-plan tbody');
+        tbody.innerHTML = '';
+
+        if (!plan.length) {
+            setTableMessage('#table-execution-plan tbody', 8, '실행 계획이 없습니다');
+            return;
+        }
+
+        plan.forEach((row) => {
+            const action = String(row.action || '').toLowerCase();
+            const actionBadge = action === 'buy'
+                ? pill('매수', 'buy')
+                : action === 'sell'
+                ? pill('매도', 'sell')
+                : pill('보유', 'hold');
+
+            const decision = row.decision || '';
+            const decisionBadge = decision === 'execute'
+                ? pill('실행', 'buy')
+                : decision === 'queue'
+                ? pill('대기', 'warn')
+                : decision === 'failed'
+                ? pill('실패', 'sell')
+                : decision === 'hold'
+                ? pill('보유', 'hold')
+                : decision
+                ? pill(decision, 'hold')
+                : '-';
+
+            const reason = escapeHtml(translateReason(row.reason || '-'));
+            const estimated = row.estimated_cost || (row.qty && row.price ? row.qty * row.price : 0);
+
+            const queueBtn = decision === 'queue'
+                ? '<span class="time-muted">대기중</span>'
+                : `<button type="button" class="queue-order button-ghost"
+                    data-symbol="${escapeHtml(row.symbol)}"
+                    data-name="${escapeHtml(row.name || row.symbol)}"
+                    data-action="${escapeHtml(row.action)}"
+                    data-qty="${row.qty}"
+                    data-price="${row.price}"
+                    data-reason="${escapeHtml(row.reason || '')}"
+                    data-source="execution_plan"
+                    style="padding:3px 8px;font-size:0.75rem;">승인큐</button>`;
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><span class="symbol-name">${escapeHtml(row.name || row.symbol)}</span></td>
+                <td>${actionBadge}</td>
+                <td>${Number(row.qty || 0).toLocaleString()}</td>
+                <td>${formatCurrency(row.price)}</td>
+                <td>${formatCurrency(estimated)}</td>
+                <td><div class="reason-cell" title="${reason}">${reason}</div></td>
+                <td>${decisionBadge}</td>
+                <td>${queueBtn}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+        bindQueueButtons();
+    } catch (err) {
+        setTableMessage('#table-execution-plan tbody', 8, err.message);
+    } finally {
+        setButtonBusy(btn, false);
+    }
+}
+
 async function fetchDashboardData() {
     await Promise.all([renderRuntime(), renderConfig(), renderBalance(), renderTrades(), renderApprovals()]);
 }
@@ -1197,6 +1283,7 @@ window.addEventListener('load', () => {
     });
 });
 document.getElementById('btn-candidates').addEventListener('click', renderCandidates);
+document.getElementById('btn-execution-plan').addEventListener('click', renderExecutionPlan);
 document.getElementById('btn-approvals').addEventListener('click', renderApprovals);
 document.getElementById('btn-ai-allocation').addEventListener('click', renderAiAllocation);
 document.getElementById('btn-optimizer').addEventListener('click', renderOptimizer);
@@ -1204,6 +1291,7 @@ document.getElementById('btn-auto-approval').addEventListener('click', toggleAut
 document.getElementById('btn-dry-run').addEventListener('click', () => toggleRuntimeOrderMode('btn-dry-run', 'DRY_RUN', '주문차단'));
 setTableMessage('#table-signals tbody', 7, '진단하기를 누르면 보유 종목 신호를 확인합니다');
 setTableMessage('#table-candidates tbody', 8, '찾기를 누르면 관심종목에서 매수 후보를 검색합니다');
+setTableMessage('#table-execution-plan tbody', 8, '불러오기를 누르면 다음 사이클 실행 계획을 표시합니다');
 setTableMessage('#table-approvals tbody', 8, '승인 대기 주문이 없습니다');
 setTableMessage('#table-ai-allocation tbody', 8, '계산을 누르면 AI 목표 비중을 확인합니다');
 setTableMessage('#table-optimizer tbody', 7, '최적화를 누르면 리스크 기반 목표 비중을 확인합니다');

@@ -208,6 +208,34 @@
                     </div>
                 </section>
 
+                <section class="card glass panel-execution-plan">
+                    <div class="panel-header split-header">
+                        <div>
+                            <h2>실행 계획</h2>
+                            <p class="section-help">다음 자동매매 사이클에서 실행 예정인 주문 계획입니다.</p>
+                        </div>
+                        <button type="button" id="btn-execution-plan">불러오기</button>
+                    </div>
+                    <div id="execution-plan-summary" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;font-size:0.85rem;color:#94a3b8;"></div>
+                    <div class="table-responsive">
+                        <table id="table-execution-plan">
+                            <thead>
+                                <tr>
+                                    <th>종목</th>
+                                    <th>구분</th>
+                                    <th>수량</th>
+                                    <th>가격</th>
+                                    <th>예상금액</th>
+                                    <th>근거</th>
+                                    <th>결정</th>
+                                    <th>승인</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </section>
+
                 <section class="card glass panel-approvals">
                     <div class="panel-header split-header">
                         <div>

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "language": "korean",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "statusMessage": "Python 문법 검사 중...",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; [[ \"$f\" == *.py ]] && python -m py_compile \"$f\" && echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PostToolUse\\\",\\\"additionalContext\\\":\\\"문법 OK: $f\\\"}}\" || true; } 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "async": true,
+            "command": "jq -r '\"[\\(now | todate)] \\(.tool_input.command)\"' >> /c/Users/turtl/.claude/bash-audit.txt 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\": \"세션 완료. bash 명령 감사 로그: ~/.claude/bash-audit.txt\"}'"
+          }
+        ]
+      }
+    ]
+  }
+}
